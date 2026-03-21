@@ -18,7 +18,7 @@ DELETE /api/crowd/history
 import time
 from datetime import datetime
 from flask import Blueprint, request, jsonify, current_app
-from app.services.crowd import describe_crowd
+from app.services.crowd import describe_crowd, describe_individual
 from app.services.songs_db import get_song
 from app.services.youtube import search_youtube
 from app.routes.playback import set_current_track
@@ -43,15 +43,21 @@ _history: list[dict] = []
 def analyze():
     data = request.get_json(silent=True) or {}
     image_b64 = data.get("image_base64")
+    mode      = data.get("mode", "club")   # "club" | "study"
 
     if not image_b64:
         return jsonify({"error": "image_base64 is required"}), 400
 
-    scene = describe_crowd(image_b64)
+    if mode == "study":
+        scene = describe_individual(image_b64)
+    else:
+        scene = describe_crowd(image_b64)
+
     new_energy    = scene["energy"]
     new_sentiment = scene["sentiment"]
     confidence    = scene["confidence"]
     description   = scene["description"]
+    coach_message = scene.get("coach_message")
     threshold     = current_app.config.get("ENERGY_CHANGE_THRESHOLD", 2)
     timestamp     = datetime.utcnow().isoformat() + "Z"
 
@@ -67,13 +73,14 @@ def analyze():
         prev_energy is not None and secs_since_change < SONG_CHANGE_COOLDOWN
     ):
         entry = {
-            "timestamp":   timestamp,
-            "changed":     False,
-            "energy":      new_energy,
-            "sentiment":   new_sentiment,
-            "confidence":  confidence,
-            "description": description,
-            "track":       None,
+            "timestamp":     timestamp,
+            "changed":       False,
+            "energy":        new_energy,
+            "sentiment":     new_sentiment,
+            "confidence":    confidence,
+            "description":   description,
+            "coach_message": coach_message,
+            "track":         None,
         }
         _history.append(entry)
         return jsonify(entry)
@@ -82,7 +89,20 @@ def analyze():
     _state["sentiment"]       = new_sentiment
     _state["last_changed_at"] = time.time()
 
-    song = get_song(new_sentiment, new_energy, _state["recently_played"])
+    # In study mode map all emotions to appropriate song sentiments
+    song_sentiment = new_sentiment
+    song_energy    = new_energy
+    if mode == "study":
+        if new_sentiment in ("focused", "happy"):
+            song_sentiment = new_sentiment
+        elif new_sentiment == "tired":
+            song_sentiment = "focused"
+            song_energy    = min(new_energy + 2, 10)  # slightly more energetic to wake up
+        else:  # stressed
+            song_sentiment = "calm"
+            song_energy    = max(new_energy - 2, 1)   # most calming
+
+    song = get_song(song_sentiment, song_energy, _state["recently_played"])
     track = None
 
     if song:
@@ -107,13 +127,14 @@ def analyze():
         set_current_track(track, source="auto")
 
     entry = {
-        "timestamp":   timestamp,
-        "changed":     True,
-        "energy":      new_energy,
-        "sentiment":   new_sentiment,
-        "confidence":  confidence,
-        "description": description,
-        "track":       track,
+        "timestamp":     timestamp,
+        "changed":       True,
+        "energy":        new_energy,
+        "sentiment":     new_sentiment,
+        "confidence":    confidence,
+        "description":   description,
+        "coach_message": coach_message,
+        "track":         track,
     }
     if not track:
         entry["error"] = "No track found"

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Camera, Play, Square, Activity, HeartPulse, BrainCircuit, Mic, Music2, SkipForward, ListMusic, Lock, Unlock } from "lucide-react";
+import { Camera, Play, Square, Activity, HeartPulse, BrainCircuit, Mic, Music2, SkipForward, ListMusic, Lock, Unlock, BookOpen, Users } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -11,6 +11,17 @@ import { analyzeFrame, clearHistory, overrideSentiment, type AnalysisEntry, type
 const CAPTURE_INTERVAL_MS = 7000;
 const QUEUE_PREFILL = 3;
 const FADE_SECS     = 2.5;
+
+// Emotion → icon + color for Lock In mode
+const EMOTION_CONFIG: Record<string, { emoji: string; color: string; label: string }> = {
+    focused:  { emoji: "🎯", color: "text-blue-300",   label: "Locked In"  },
+    happy:    { emoji: "😊", color: "text-yellow-300",  label: "Happy"      },
+    tired:    { emoji: "😴", color: "text-purple-300",  label: "Tired"      },
+    stressed: { emoji: "😤", color: "text-orange-300",  label: "Stressed"   },
+    // club mode fallbacks
+    party:    { emoji: "🔥", color: "text-pink-300",    label: "Party"      },
+    calm:     { emoji: "🌊", color: "text-indigo-300",  label: "Calm"       },
+};
 
 declare global {
     interface Window {
@@ -28,12 +39,12 @@ interface YTPlayer {
 }
 
 function rampYTVolume(player: YTPlayer, from: number, to: number, ms: number) {
-    const steps   = 30;
-    const stepMs  = ms / steps;
-    const delta   = (to - from) / steps;
-    let current   = from;
-    let count     = 0;
-    const timer   = setInterval(() => {
+    const steps  = 30;
+    const stepMs = ms / steps;
+    const delta  = (to - from) / steps;
+    let current  = from;
+    let count    = 0;
+    const timer  = setInterval(() => {
         count++;
         current += delta;
         player.setVolume(Math.max(0, Math.min(100, Math.round(current))));
@@ -49,6 +60,7 @@ export default function LiveSessionPage() {
     const ytReadyRef     = useRef(false);
     const pendingVideoId = useRef<string | null>(null);
 
+    const [appMode,         setAppMode]         = useState<"club" | "study">("club");
     const [isSessionActive, setIsSessionActive] = useState(false);
     const [stream,          setStream]          = useState<MediaStream | null>(null);
     const [isAnalyzing,     setIsAnalyzing]     = useState(false);
@@ -59,6 +71,7 @@ export default function LiveSessionPage() {
     const [currentConfidence, setCurrentConfidence] = useState<number | null>(null);
     const [currentEnergy,     setCurrentEnergy]     = useState<number | null>(null);
     const [currentTrack,      setCurrentTrack]      = useState<Track | null>(null);
+    const [coachMessage,      setCoachMessage]      = useState<string | null>(null);
     const [liveDescription,   setLiveDescription]   = useState("Awaiting session start...");
     const [eventLog,          setEventLog]          = useState<AnalysisEntry[]>([]);
     const [queue,             setQueue]             = useState<Track[]>([]);
@@ -92,7 +105,6 @@ export default function LiveSessionPage() {
         };
     }, []);
 
-    // ── Load YouTube video with crossfade ─────────────────────────────────────
     const loadYouTubeTrack = useCallback(async (videoId: string) => {
         const yt = ytPlayerRef.current;
         if (!yt || !ytReadyRef.current) { pendingVideoId.current = videoId; return; }
@@ -102,20 +114,17 @@ export default function LiveSessionPage() {
         setTimeout(() => rampYTVolume(yt, 0, 80, FADE_SECS * 1000), 500);
     }, []);
 
-    // Adjust playback rate with energy
     useEffect(() => {
         if (currentEnergy === null || !ytReadyRef.current || !ytPlayerRef.current) return;
         const rate = currentEnergy >= 8 ? 1.25 : currentEnergy <= 3 ? 0.75 : 1.0;
         ytPlayerRef.current.setPlaybackRate(rate);
     }, [currentEnergy]);
 
-    // Load a track
     const loadTrack = useCallback(async (track: Track) => {
         setCurrentTrack(track);
         if (track.youtube_id) await loadYouTubeTrack(track.youtube_id);
     }, [loadYouTubeTrack]);
 
-    // Skip to next in queue
     const skipTrack = useCallback(async () => {
         if (queue.length === 0) return;
         const [next, ...rest] = queue;
@@ -136,17 +145,18 @@ export default function LiveSessionPage() {
     }, []);
 
     const runAnalysis = useCallback(async () => {
-        if (overrideLock) return;   // algorithm paused while override is active
+        if (overrideLock) return;
         const frame = captureFrame();
         if (!frame) return;
         setIsAnalyzing(true);
-        setLiveDescription("Analyzing crowd...");
+        setLiveDescription("Analyzing...");
         try {
-            const result = await analyzeFrame(frame);
+            const result = await analyzeFrame(frame, appMode);
             setCurrentMood(result.sentiment ?? "Unknown");
             setCurrentConfidence(result.confidence ?? null);
             setCurrentEnergy(result.energy);
             setLiveDescription(result.description || "No description returned.");
+            if (result.coach_message) setCoachMessage(result.coach_message);
             setEventLog(prev => [result, ...prev].slice(0, 50));
             if (result.changed && result.track) {
                 await loadTrack(result.track);
@@ -157,7 +167,7 @@ export default function LiveSessionPage() {
         } finally {
             setIsAnalyzing(false);
         }
-    }, [captureFrame, loadTrack, overrideLock]);
+    }, [captureFrame, loadTrack, overrideLock, appMode]);
 
     // ── Session controls ──────────────────────────────────────────────────────
     const startSession = async () => {
@@ -169,6 +179,7 @@ export default function LiveSessionPage() {
             await clearHistory();
             setEventLog([]);
             setCurrentTrack(null);
+            setCoachMessage(null);
             setQueue([]);
             setCurrentMood("Analyzing...");
         } catch {
@@ -187,6 +198,7 @@ export default function LiveSessionPage() {
         setCurrentMood("None");
         setQueue([]);
         setOverrideLock(null);
+        setCoachMessage(null);
     };
 
     const forceMode = async (mode: "party" | "calm") => {
@@ -228,10 +240,9 @@ export default function LiveSessionPage() {
         };
     }, [stream]);
 
-    // ── Derived UI ─────────────────────────────────────────────────────────────
-    const moodColor = currentMood === "party" ? "text-pink-400"
-                    : currentMood === "calm"  ? "text-indigo-400"
-                    : "text-white/60";
+    // ── Derived UI ────────────────────────────────────────────────────────────
+    const emotionCfg = EMOTION_CONFIG[currentMood] ?? { emoji: "🎵", color: "text-white/60", label: currentMood };
+    const isStudy    = appMode === "study";
 
     const energy = currentEnergy ?? 0;
     const eqBars = Array.from({ length: 12 }, (_, i) => {
@@ -247,11 +258,43 @@ export default function LiveSessionPage() {
             {/* Header */}
             <div className="flex items-center justify-between flex-wrap gap-4">
                 <div>
-                    <h1 className="text-4xl font-black text-white tracking-tight">Live DJ Session</h1>
-                    <p className="text-white/40 mt-1 text-sm">Crowd analysis · YouTube playback · Gemini Vision</p>
+                    <h1 className="text-4xl font-black text-white tracking-tight">
+                        {isStudy ? "Study Buddy" : "Live DJ Session"}
+                    </h1>
+                    <p className="text-white/40 mt-1 text-sm">
+                        {isStudy
+                            ? "Lock In mode · Personal focus assistant · Gemini Vision"
+                            : "Crowd analysis · YouTube playback · Gemini Vision"}
+                    </p>
                 </div>
-                <div className="flex gap-3 flex-wrap">
-                    {isSessionActive && (
+                <div className="flex gap-3 flex-wrap items-center">
+                    {/* Mode toggle — only before session starts */}
+                    {!isSessionActive && (
+                        <div className="flex bg-white/5 border border-white/10 rounded-xl p-1 gap-1">
+                            <button
+                                onClick={() => setAppMode("club")}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                                    appMode === "club"
+                                    ? "bg-pink-500/20 text-pink-300"
+                                    : "text-white/40 hover:text-white/70"
+                                }`}
+                            >
+                                <Users className="w-4 h-4" /> Club Mode
+                            </button>
+                            <button
+                                onClick={() => setAppMode("study")}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                                    appMode === "study"
+                                    ? "bg-blue-500/20 text-blue-300"
+                                    : "text-white/40 hover:text-white/70"
+                                }`}
+                            >
+                                <BookOpen className="w-4 h-4" /> Lock In
+                            </button>
+                        </div>
+                    )}
+
+                    {isSessionActive && !isStudy && (
                         <>
                             {overrideLock ? (
                                 <Button onClick={clearOverride}
@@ -277,8 +320,13 @@ export default function LiveSessionPage() {
                             )}
                         </>
                     )}
+
                     {!isSessionActive ? (
-                        <Button onClick={startSession} className="bg-indigo-600 hover:bg-indigo-500 rounded-xl h-12 px-8 font-bold text-white shadow-lg shadow-indigo-600/20 text-lg">
+                        <Button onClick={startSession} className={`rounded-xl h-12 px-8 font-bold text-white shadow-lg text-lg ${
+                            isStudy
+                            ? "bg-blue-600 hover:bg-blue-500 shadow-blue-600/20"
+                            : "bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/20"
+                        }`}>
                             <Play className="w-5 h-5 mr-2 fill-current" /> Start Session
                         </Button>
                     ) : (
@@ -289,8 +337,35 @@ export default function LiveSessionPage() {
                 </div>
             </div>
 
+            {/* ── LOCK IN: Coach Message banner (study mode only) ── */}
+            {isStudy && isSessionActive && coachMessage && (
+                <Card className={`border p-6 rounded-[32px] transition-all duration-700 ${
+                    currentMood === "stressed" ? "bg-orange-950/40 border-orange-500/20" :
+                    currentMood === "tired"    ? "bg-purple-950/40 border-purple-500/20" :
+                    currentMood === "happy"    ? "bg-yellow-950/40 border-yellow-500/20" :
+                                                 "bg-blue-950/40 border-blue-500/20"
+                }`}>
+                    <div className="flex items-start gap-5">
+                        <div className="text-5xl select-none shrink-0 mt-1">{emotionCfg.emoji}</div>
+                        <div className="flex-1 min-w-0">
+                            <p className={`text-xs font-black uppercase tracking-widest mb-2 ${emotionCfg.color}`}>
+                                {emotionCfg.label}
+                                {currentConfidence !== null && (
+                                    <span className="opacity-50 ml-2 normal-case font-normal">
+                                        {Math.round(currentConfidence * 100)}% confident
+                                    </span>
+                                )}
+                            </p>
+                            <p className="text-white text-xl font-semibold leading-relaxed">
+                                {coachMessage}
+                            </p>
+                        </div>
+                    </div>
+                </Card>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 h-full min-h-[500px]">
-                {/* Left: Camera + Analysis */}
+                {/* Left: Camera + Feed */}
                 <div className="lg:col-span-2 flex flex-col gap-6">
                     <Card className="bg-[#050505] border-white/5 overflow-hidden relative rounded-[32px] flex flex-col min-h-[460px]">
                         <div className="p-4 border-b border-white/5 flex items-center justify-between bg-black/40 backdrop-blur-md absolute top-0 left-0 right-0 z-10">
@@ -300,7 +375,12 @@ export default function LiveSessionPage() {
                                     {isAnalyzing ? "Analyzing..." : isSessionActive ? "Live" : "Camera Offline"}
                                 </span>
                             </div>
-                            <Camera className="w-4 h-4 text-white/20" />
+                            <div className="flex items-center gap-2">
+                                {isStudy && isSessionActive && (
+                                    <span className="text-xs font-bold text-blue-400/60 uppercase tracking-widest">Lock In</span>
+                                )}
+                                <Camera className="w-4 h-4 text-white/20" />
+                            </div>
                         </div>
                         <div className="flex-1 relative bg-black/50 flex items-center justify-center pt-16">
                             <video ref={videoRef} autoPlay playsInline muted
@@ -320,12 +400,13 @@ export default function LiveSessionPage() {
                                 </div>
                             )}
                         </div>
-                        {/* EQ bars */}
                         {isSessionActive && (
                             <div className="absolute bottom-0 left-0 right-0 flex items-end justify-center gap-1 h-20 px-8 bg-gradient-to-t from-black/60 to-transparent pointer-events-none">
                                 {eqBars.map((h, i) => (
-                                    <div key={i} className={`w-3 rounded-t transition-all duration-200 ${currentMood === "party" ? "bg-pink-500/60" : "bg-indigo-500/60"}`}
-                                        style={{ height: `${h}%` }} />
+                                    <div key={i} className={`w-3 rounded-t transition-all duration-200 ${
+                                        isStudy ? "bg-blue-500/60" :
+                                        currentMood === "party" ? "bg-pink-500/60" : "bg-indigo-500/60"
+                                    }`} style={{ height: `${h}%` }} />
                                 ))}
                             </div>
                         )}
@@ -339,7 +420,7 @@ export default function LiveSessionPage() {
                         <ScrollArea className="flex-1 bg-black/40 rounded-2xl border border-white/5 p-4 font-mono text-sm text-white/70 max-h-40">
                             <div className="space-y-3">
                                 <div className="flex items-start gap-4">
-                                    <span className="text-indigo-400 font-bold shrink-0">{'>'}</span>
+                                    <span className={`font-bold shrink-0 ${isStudy ? "text-blue-400" : "text-indigo-400"}`}>{'>'}</span>
                                     <p className={`leading-relaxed ${isAnalyzing ? 'animate-pulse' : ''}`}>{liveDescription}</p>
                                 </div>
                                 {eventLog.slice(1).map((entry, i) => (
@@ -362,10 +443,18 @@ export default function LiveSessionPage() {
                         <div className="space-y-5">
                             <div className="space-y-2">
                                 <div className="flex justify-between text-sm">
+                                    <span className="text-white/60">Mode</span>
+                                    <Badge className={isStudy
+                                        ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
+                                        : "bg-pink-500/10 text-pink-400 border-pink-500/20"}>
+                                        {isStudy ? "🔒 Lock In" : "🎵 Club"}
+                                    </Badge>
+                                </div>
+                                <div className="flex justify-between text-sm">
                                     <span className="text-white/60">Music State</span>
                                     {!isSessionActive ? (
                                         <Badge className="bg-white/5 text-white/40 border-white/10">Awaiting Data</Badge>
-                                    ) : overrideLock ? (
+                                    ) : !isStudy && overrideLock ? (
                                         <Badge className={overrideLock === "party" ? "bg-pink-500/20 text-pink-300 border-pink-500/30" : "bg-indigo-500/20 text-indigo-300 border-indigo-500/30"}>
                                             <Lock className="w-3 h-3 mr-1" /> Locked: {overrideLock}
                                         </Badge>
@@ -384,11 +473,13 @@ export default function LiveSessionPage() {
                                     </div>
                                 )}
                                 <div className="flex justify-between text-sm items-center pt-2">
-                                    <span className="text-white/60">Current Mood</span>
+                                    <span className="text-white/60">{isStudy ? "State" : "Mood"}</span>
                                     <div className="text-right">
-                                        <span className={`text-2xl font-black capitalize ${moodColor}`}>{currentMood}</span>
+                                        <span className={`text-2xl font-black capitalize ${emotionCfg.color}`}>
+                                            {emotionCfg.emoji} {emotionCfg.label}
+                                        </span>
                                         {currentConfidence !== null && (
-                                            <p className={`text-xs font-bold mt-0.5 ${moodColor} opacity-70`}>
+                                            <p className={`text-xs font-bold mt-0.5 ${emotionCfg.color} opacity-70`}>
                                                 {Math.round(currentConfidence * 100)}% confident
                                             </p>
                                         )}
@@ -398,7 +489,6 @@ export default function LiveSessionPage() {
 
                             <div className="h-[1px] bg-white/5" />
 
-                            {/* Event log */}
                             <div>
                                 <h4 className="text-xs font-bold text-white/40 uppercase tracking-widest mb-3">Event Log</h4>
                                 <div className="space-y-2 max-h-36 overflow-y-auto">
@@ -414,7 +504,7 @@ export default function LiveSessionPage() {
                                             </span>
                                             <span className={entry.changed ? "text-indigo-300/80" : "text-white/30"}>
                                                 {entry.changed
-                                                    ? `Mood → ${entry.sentiment} (${entry.energy}/10)${entry.track ? ` · ${entry.track.name}` : ""}`
+                                                    ? `${entry.sentiment} (${entry.energy}/10)${entry.track ? ` · ${entry.track.name}` : ""}`
                                                     : `Stable · ${entry.sentiment} (${entry.energy}/10)`}
                                             </span>
                                         </div>
@@ -425,17 +515,21 @@ export default function LiveSessionPage() {
                     </Card>
 
                     {/* Now Playing + Queue */}
-                    <Card className="bg-gradient-to-br from-indigo-900/40 to-purple-900/20 border-white/10 p-6 rounded-[32px]">
+                    <Card className={`border p-6 rounded-[32px] ${
+                        isStudy
+                        ? "bg-gradient-to-br from-blue-900/40 to-indigo-900/20 border-white/10"
+                        : "bg-gradient-to-br from-indigo-900/40 to-purple-900/20 border-white/10"
+                    }`}>
                         <div className="flex items-center gap-4 mb-4">
                             <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center shrink-0">
-                                {currentTrack ? <Music2 className={`w-6 h-6 ${moodColor}`} /> : <HeartPulse className="w-6 h-6 text-white/40" />}
+                                {currentTrack ? <Music2 className={`w-6 h-6 ${emotionCfg.color}`} /> : <HeartPulse className="w-6 h-6 text-white/40" />}
                             </div>
                             <div className="min-w-0 flex-1">
                                 <h4 className="text-white font-bold text-base leading-tight truncate">
                                     {currentTrack?.name ?? "Waiting for analysis..."}
                                 </h4>
                                 <p className="text-white/50 text-sm truncate">
-                                    {currentTrack?.artist ?? (isSessionActive ? "Analyzing crowd..." : "Start a session")}
+                                    {currentTrack?.artist ?? (isSessionActive ? "Analyzing..." : "Start a session")}
                                 </p>
                                 {currentTrack && (
                                     <p className="text-white/30 text-xs mt-0.5">{currentTrack.genre} · {currentTrack.bpm} BPM · {currentTrack.key}</p>
@@ -449,7 +543,6 @@ export default function LiveSessionPage() {
                             )}
                         </div>
 
-                        {/* YouTube player */}
                         <div className="rounded-2xl overflow-hidden bg-black mb-3">
                             <div id="yt-player" />
                         </div>
@@ -464,7 +557,6 @@ export default function LiveSessionPage() {
                             <p className="text-xs text-white/30 text-center mb-3">Add YOUTUBE_API_KEY to backend/.env</p>
                         )}
 
-                        {/* Queue */}
                         {queue.length > 0 && (
                             <div>
                                 <div className="h-[1px] bg-white/5 mb-3" />

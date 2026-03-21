@@ -55,6 +55,23 @@ SONGS: list[dict] = [
     {"name": "Yellow",                 "artist": "Coldplay",                   "bpm": 88,  "key": "B major",  "duration_s": 269, "genre": "alternative",   "energy": 4,  "sentiment": "calm",  "year": 2000},
     # Mid calm
     {"name": "Africa",                 "artist": "Toto",                       "bpm": 92,  "key": "Ab major", "duration_s": 295, "genre": "pop rock",      "energy": 5,  "sentiment": "calm",  "year": 1982},
+
+    # ── FOCUSED (study/deep work) ───────────────────────────────────────────────
+    {"name": "Intro",                  "artist": "The xx",                     "bpm": 80,  "key": "E minor",  "duration_s": 130, "genre": "indie",         "energy": 3,  "sentiment": "focused", "year": 2009},
+    {"name": "Night Owl",              "artist": "Galimatias",                 "bpm": 82,  "key": "A minor",  "duration_s": 214, "genre": "lo-fi",         "energy": 3,  "sentiment": "focused", "year": 2015},
+    {"name": "Retrograde",             "artist": "James Blake",                "bpm": 86,  "key": "F major",  "duration_s": 244, "genre": "electronic",    "energy": 4,  "sentiment": "focused", "year": 2013},
+    {"name": "On & On",                "artist": "Erykah Badu",                "bpm": 90,  "key": "D minor",  "duration_s": 295, "genre": "neo-soul",      "energy": 4,  "sentiment": "focused", "year": 1997},
+    {"name": "Comptine d'un autre été","artist": "Yann Tiersen",               "bpm": 76,  "key": "E minor",  "duration_s": 149, "genre": "neoclassical",  "energy": 2,  "sentiment": "focused", "year": 2001},
+    {"name": "Divenire",               "artist": "Ludovico Einaudi",           "bpm": 96,  "key": "G major",  "duration_s": 365, "genre": "neoclassical",  "energy": 4,  "sentiment": "focused", "year": 2006},
+    {"name": "Opus 23",                "artist": "Dustin O'Halloran",          "bpm": 72,  "key": "A minor",  "duration_s": 201, "genre": "neoclassical",  "energy": 2,  "sentiment": "focused", "year": 2011},
+
+    # ── HAPPY (upbeat but calm enough to work to) ───────────────────────────────
+    {"name": "Happy",                  "artist": "Pharrell Williams",          "bpm": 160, "key": "F minor",  "duration_s": 233, "genre": "pop",           "energy": 7,  "sentiment": "happy", "year": 2013},
+    {"name": "Here Comes the Sun",     "artist": "The Beatles",                "bpm": 129, "key": "A major",  "duration_s": 185, "genre": "classic rock",  "energy": 6,  "sentiment": "happy", "year": 1969},
+    {"name": "Good as Hell",           "artist": "Lizzo",                      "bpm": 95,  "key": "C major",  "duration_s": 159, "genre": "pop",           "energy": 7,  "sentiment": "happy", "year": 2016},
+    {"name": "Shake It Off",           "artist": "Taylor Swift",               "bpm": 160, "key": "G major",  "duration_s": 219, "genre": "pop",           "energy": 8,  "sentiment": "happy", "year": 2014},
+    {"name": "Walking on Sunshine",    "artist": "Katrina and the Waves",      "bpm": 110, "key": "A major",  "duration_s": 239, "genre": "pop rock",      "energy": 8,  "sentiment": "happy", "year": 1985},
+    {"name": "I Gotta Feeling",        "artist": "The Black Eyed Peas",        "bpm": 128, "key": "G major",  "duration_s": 290, "genre": "pop",           "energy": 8,  "sentiment": "happy", "year": 2009},
 ]
 
 
@@ -62,9 +79,12 @@ def get_song(sentiment: str, energy: int, recently_played: list[str] | None = No
     """
     Pick the best-matching song from the database.
     Avoids recently played songs, prefers closest energy match.
+    Falls back to "calm" pool if the requested sentiment has no songs.
     """
     played = set(recently_played or [])
     pool   = [s for s in SONGS if s["sentiment"] == sentiment]
+    if not pool:
+        pool = [s for s in SONGS if s["sentiment"] == "calm"]
 
     def key(s: dict) -> str:
         return f"{s['name']}|{s['artist']}"
