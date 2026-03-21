@@ -1,16 +1,23 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Camera, Play, Square, Activity, HeartPulse, BrainCircuit, Mic, Music2, SkipForward, ListMusic, Lock, Unlock } from "lucide-react";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+    Camera,
+    Play,
+    Square,
+    SkipForward,
+    ListMusic,
+    Lock,
+    Unlock,
+    ChevronLeft,
+} from "lucide-react";
 import { analyzeFrame, clearHistory, overrideSentiment, type AnalysisEntry, type Track } from "@/lib/api";
 
 const CAPTURE_INTERVAL_MS = 7000;
 const QUEUE_PREFILL = 3;
-const FADE_SECS     = 2.5;
+const FADE_SECS = 2.5;
 
 declare global {
     interface Window {
@@ -28,12 +35,12 @@ interface YTPlayer {
 }
 
 function rampYTVolume(player: YTPlayer, from: number, to: number, ms: number) {
-    const steps   = 30;
-    const stepMs  = ms / steps;
-    const delta   = (to - from) / steps;
-    let current   = from;
-    let count     = 0;
-    const timer   = setInterval(() => {
+    const steps = 30;
+    const stepMs = ms / steps;
+    const delta = (to - from) / steps;
+    let current = from;
+    let count = 0;
+    const timer = setInterval(() => {
         count++;
         current += delta;
         player.setVolume(Math.max(0, Math.min(100, Math.round(current))));
@@ -42,42 +49,43 @@ function rampYTVolume(player: YTPlayer, from: number, to: number, ms: number) {
 }
 
 export default function LiveSessionPage() {
-    const videoRef       = useRef<HTMLVideoElement>(null);
-    const canvasRef      = useRef<HTMLCanvasElement>(null);
-    const intervalRef    = useRef<ReturnType<typeof setInterval> | null>(null);
-    const ytPlayerRef    = useRef<YTPlayer | null>(null);
-    const ytReadyRef     = useRef(false);
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const ytPlayerRef = useRef<YTPlayer | null>(null);
+    const ytReadyRef = useRef(false);
     const pendingVideoId = useRef<string | null>(null);
 
     const [isSessionActive, setIsSessionActive] = useState(false);
-    const [stream,          setStream]          = useState<MediaStream | null>(null);
-    const [isAnalyzing,     setIsAnalyzing]     = useState(false);
-    const [isOverriding,    setIsOverriding]    = useState(false);
-    const [overrideLock,    setOverrideLock]    = useState<"party" | "calm" | null>(null);
+    const [stream, setStream] = useState<MediaStream | null>(null);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [isOverriding, setIsOverriding] = useState(false);
+    const [overrideLock, setOverrideLock] = useState<"party" | "calm" | null>(null);
 
-    const [currentMood,       setCurrentMood]       = useState<string>("None");
+    const [currentMood, setCurrentMood] = useState<string>("None");
     const [currentConfidence, setCurrentConfidence] = useState<number | null>(null);
-    const [currentEnergy,     setCurrentEnergy]     = useState<number | null>(null);
-    const [currentTrack,      setCurrentTrack]      = useState<Track | null>(null);
-    const [liveDescription,   setLiveDescription]   = useState("Awaiting session start...");
-    const [eventLog,          setEventLog]          = useState<AnalysisEntry[]>([]);
-    const [queue,             setQueue]             = useState<Track[]>([]);
+    const [currentEnergy, setCurrentEnergy] = useState<number | null>(null);
+    const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
+    const [liveDescription, setLiveDescription] = useState("Start the session to read the room.");
+    const [eventLog, setEventLog] = useState<AnalysisEntry[]>([]);
+    const [queue, setQueue] = useState<Track[]>([]);
 
-    // ── YouTube IFrame setup ──────────────────────────────────────────────────
     useEffect(() => {
         if (document.getElementById("yt-api-script")) return;
         const tag = document.createElement("script");
-        tag.id  = "yt-api-script";
+        tag.id = "yt-api-script";
         tag.src = "https://www.youtube.com/iframe_api";
         document.head.appendChild(tag);
 
         window.onYouTubeIframeAPIReady = () => {
             ytPlayerRef.current = new window.YT.Player("yt-player", {
-                height: "180", width: "100%",
+                height: "200",
+                width: "100%",
                 playerVars: { autoplay: 1, controls: 1, rel: 0, modestbranding: 1, mute: 1 },
                 events: {
                     onReady: (e: { target: YTPlayer }) => {
                         e.target.setVolume(80);
+                        e.target.setPlaybackRate(1);
                         ytReadyRef.current = true;
                         if (pendingVideoId.current) {
                             e.target.loadVideoById(pendingVideoId.current);
@@ -85,37 +93,38 @@ export default function LiveSessionPage() {
                         }
                     },
                     onStateChange: (e: { data: number; target: YTPlayer }) => {
-                        if (e.data === 1) { e.target.unMute(); e.target.setVolume(80); }
+                        if (e.data === 1) {
+                            e.target.unMute();
+                            e.target.setVolume(80);
+                            e.target.setPlaybackRate(1);
+                        }
                     },
                 },
             });
         };
     }, []);
 
-    // ── Load YouTube video with crossfade ─────────────────────────────────────
     const loadYouTubeTrack = useCallback(async (videoId: string) => {
         const yt = ytPlayerRef.current;
-        if (!yt || !ytReadyRef.current) { pendingVideoId.current = videoId; return; }
+        if (!yt || !ytReadyRef.current) {
+            pendingVideoId.current = videoId;
+            return;
+        }
         rampYTVolume(yt, 80, 0, FADE_SECS * 1000);
-        await new Promise(r => setTimeout(r, FADE_SECS * 1000));
+        await new Promise((r) => setTimeout(r, FADE_SECS * 1000));
         yt.loadVideoById(videoId);
+        yt.setPlaybackRate(1);
         setTimeout(() => rampYTVolume(yt, 0, 80, FADE_SECS * 1000), 500);
     }, []);
 
-    // Adjust playback rate with energy
-    useEffect(() => {
-        if (currentEnergy === null || !ytReadyRef.current || !ytPlayerRef.current) return;
-        const rate = currentEnergy >= 8 ? 1.25 : currentEnergy <= 3 ? 0.75 : 1.0;
-        ytPlayerRef.current.setPlaybackRate(rate);
-    }, [currentEnergy]);
+    const loadTrack = useCallback(
+        async (track: Track) => {
+            setCurrentTrack(track);
+            if (track.youtube_id) await loadYouTubeTrack(track.youtube_id);
+        },
+        [loadYouTubeTrack]
+    );
 
-    // Load a track
-    const loadTrack = useCallback(async (track: Track) => {
-        setCurrentTrack(track);
-        if (track.youtube_id) await loadYouTubeTrack(track.youtube_id);
-    }, [loadYouTubeTrack]);
-
-    // Skip to next in queue
     const skipTrack = useCallback(async () => {
         if (queue.length === 0) return;
         const [next, ...rest] = queue;
@@ -123,12 +132,12 @@ export default function LiveSessionPage() {
         await loadTrack(next);
     }, [queue, loadTrack]);
 
-    // ── Webcam & analysis ─────────────────────────────────────────────────────
     const captureFrame = useCallback((): string | null => {
-        const video  = videoRef.current;
+        const video = videoRef.current;
         const canvas = canvasRef.current;
         if (!video || !canvas || video.readyState < 2) return null;
-        canvas.width = 640; canvas.height = 480;
+        canvas.width = 640;
+        canvas.height = 480;
         const ctx = canvas.getContext("2d");
         if (!ctx) return null;
         ctx.drawImage(video, 0, 0, 640, 480);
@@ -136,21 +145,21 @@ export default function LiveSessionPage() {
     }, []);
 
     const runAnalysis = useCallback(async () => {
-        if (overrideLock) return;   // algorithm paused while override is active
+        if (overrideLock) return;
         const frame = captureFrame();
         if (!frame) return;
         setIsAnalyzing(true);
-        setLiveDescription("Analyzing crowd...");
+        setLiveDescription("Analyzing…");
         try {
             const result = await analyzeFrame(frame);
             setCurrentMood(result.sentiment ?? "Unknown");
             setCurrentConfidence(result.confidence ?? null);
             setCurrentEnergy(result.energy);
             setLiveDescription(result.description || "No description returned.");
-            setEventLog(prev => [result, ...prev].slice(0, 50));
+            setEventLog((prev) => [result, ...prev].slice(0, 50));
             if (result.changed && result.track) {
                 await loadTrack(result.track);
-                setQueue(prev => prev.length < 5 ? prev : prev.slice(0, 4));
+                setQueue((prev) => (prev.length < 5 ? prev : prev.slice(0, 4)));
             }
         } catch {
             setLiveDescription("Backend unreachable. Is the Flask server running?");
@@ -159,31 +168,30 @@ export default function LiveSessionPage() {
         }
     }, [captureFrame, loadTrack, overrideLock]);
 
-    // ── Session controls ──────────────────────────────────────────────────────
     const startSession = async () => {
         try {
             const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
             setStream(mediaStream);
             setIsSessionActive(true);
-            setLiveDescription("Camera connected. First analysis in a moment...");
+            setLiveDescription("Camera on. First read in a moment…");
             await clearHistory();
             setEventLog([]);
             setCurrentTrack(null);
             setQueue([]);
-            setCurrentMood("Analyzing...");
+            setCurrentMood("Analyzing…");
         } catch {
-            alert("Could not access the camera. Please ensure permissions are granted.");
+            alert("Could not access the camera. Please allow camera access.");
         }
     };
 
     const stopSession = () => {
-        if (stream) stream.getTracks().forEach(t => t.stop());
+        if (stream) stream.getTracks().forEach((t) => t.stop());
         if (intervalRef.current) clearInterval(intervalRef.current);
         intervalRef.current = null;
         setStream(null);
         setIsSessionActive(false);
         setIsAnalyzing(false);
-        setLiveDescription("Session ended. Camera offline.");
+        setLiveDescription("Session ended.");
         setCurrentMood("None");
         setQueue([]);
         setOverrideLock(null);
@@ -197,7 +205,7 @@ export default function LiveSessionPage() {
                 await loadTrack(track);
                 setCurrentMood(mode);
                 setCurrentEnergy(mode === "party" ? 8 : 3);
-                setLiveDescription(`Override active → ${mode} mode. Algorithm paused.`);
+                setLiveDescription(`DJ override: ${mode}. Auto picks paused until you resume.`);
                 setOverrideLock(mode);
             }
         } finally {
@@ -207,7 +215,7 @@ export default function LiveSessionPage() {
 
     const clearOverride = () => {
         setOverrideLock(null);
-        setLiveDescription("Override cleared. Algorithm resumed.");
+        setLiveDescription("Auto mode resumed.");
     };
 
     useEffect(() => {
@@ -218,275 +226,270 @@ export default function LiveSessionPage() {
         if (!isSessionActive) return;
         runAnalysis();
         intervalRef.current = setInterval(runAnalysis, CAPTURE_INTERVAL_MS);
-        return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+        return () => {
+            if (intervalRef.current) clearInterval(intervalRef.current);
+        };
     }, [isSessionActive, runAnalysis]);
 
     useEffect(() => {
         return () => {
-            if (stream) stream.getTracks().forEach(t => t.stop());
+            if (stream) stream.getTracks().forEach((t) => t.stop());
             if (intervalRef.current) clearInterval(intervalRef.current);
         };
     }, [stream]);
 
-    // ── Derived UI ─────────────────────────────────────────────────────────────
-    const moodColor = currentMood === "party" ? "text-pink-400"
-                    : currentMood === "calm"  ? "text-indigo-400"
-                    : "text-white/60";
+    const moodColor =
+        currentMood === "party"
+            ? "text-fuchsia-400"
+            : currentMood === "calm"
+              ? "text-sky-400"
+              : "text-zinc-400";
 
     const energy = currentEnergy ?? 0;
-    const eqBars = Array.from({ length: 12 }, (_, i) => {
-        const base   = isSessionActive ? (energy / 10) * 60 : 4;
-        const jitter = isSessionActive ? Math.sin(i * 2.3 + Date.now() / 400) * 12 : 0;
-        return Math.max(4, Math.min(80, base + jitter));
+    const eqBars = Array.from({ length: 14 }, (_, i) => {
+        const base = isSessionActive ? (energy / 10) * 55 : 5;
+        const jitter = isSessionActive ? Math.sin(i * 2.1 + Date.now() / 400) * 10 : 0;
+        return Math.max(6, Math.min(85, base + jitter));
     });
 
     return (
-        <div className="h-full flex flex-col p-8 max-w-7xl mx-auto w-full gap-8 overflow-y-auto">
+        <div className="flex min-h-[100dvh] flex-col">
             <canvas ref={canvasRef} className="hidden" />
 
-            {/* Header */}
-            <div className="flex items-center justify-between flex-wrap gap-4">
-                <div>
-                    <h1 className="text-4xl font-black text-white tracking-tight">Live DJ Session</h1>
-                    <p className="text-white/40 mt-1 text-sm">Crowd analysis · YouTube playback · Gemini Vision</p>
-                </div>
-                <div className="flex gap-3 flex-wrap">
-                    {isSessionActive && (
-                        <>
-                            {overrideLock ? (
-                                <Button onClick={clearOverride}
-                                    className={`rounded-xl h-12 px-5 font-bold border animate-pulse ${
-                                        overrideLock === "party"
-                                        ? "bg-pink-500/20 text-pink-300 border-pink-500/40 hover:bg-pink-500/30"
-                                        : "bg-indigo-500/20 text-indigo-300 border-indigo-500/40 hover:bg-indigo-500/30"
-                                    }`}>
-                                    <Lock className="w-4 h-4 mr-2" />
-                                    Override ON: {overrideLock} — click to resume
-                                </Button>
-                            ) : (
-                                <>
-                                    <Button onClick={() => forceMode("calm")} disabled={isOverriding}
-                                        className="bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20 border border-indigo-500/20 rounded-xl h-12 px-5 font-bold">
-                                        <Unlock className="w-4 h-4 mr-2" /> Force Calm
-                                    </Button>
-                                    <Button onClick={() => forceMode("party")} disabled={isOverriding}
-                                        className="bg-pink-500/10 text-pink-300 hover:bg-pink-500/20 border border-pink-500/20 rounded-xl h-12 px-5 font-bold">
-                                        <Unlock className="w-4 h-4 mr-2" /> Force Party
-                                    </Button>
-                                </>
-                            )}
-                        </>
-                    )}
-                    {!isSessionActive ? (
-                        <Button onClick={startSession} className="bg-indigo-600 hover:bg-indigo-500 rounded-xl h-12 px-8 font-bold text-white shadow-lg shadow-indigo-600/20 text-lg">
-                            <Play className="w-5 h-5 mr-2 fill-current" /> Start Session
-                        </Button>
-                    ) : (
-                        <Button onClick={stopSession} variant="destructive" className="bg-red-500/10 text-red-500 hover:bg-red-500/20 border border-red-500/20 rounded-xl h-12 px-8 font-bold text-lg">
-                            <Square className="w-5 h-5 mr-2 fill-current" /> End Session
-                        </Button>
-                    )}
-                </div>
-            </div>
+            {/* Minimal chrome */}
+            <header className="flex shrink-0 items-center justify-between border-b border-zinc-800/80 px-4 py-3 sm:px-6">
+                <Link
+                    href="/"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-zinc-400 transition hover:text-zinc-100"
+                >
+                    <ChevronLeft className="h-4 w-4" />
+                    Home
+                </Link>
+                <p className="text-center text-sm font-semibold tracking-tight text-zinc-100">Crowd DJ</p>
+                <span className="w-14 sm:w-20" aria-hidden />
+            </header>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 h-full min-h-[500px]">
-                {/* Left: Camera + Analysis */}
-                <div className="lg:col-span-2 flex flex-col gap-6">
-                    <Card className="bg-[#050505] border-white/5 overflow-hidden relative rounded-[32px] flex flex-col min-h-[460px]">
-                        <div className="p-4 border-b border-white/5 flex items-center justify-between bg-black/40 backdrop-blur-md absolute top-0 left-0 right-0 z-10">
-                            <div className="flex items-center gap-2">
-                                <div className={`w-2 h-2 rounded-full ${isSessionActive ? 'bg-red-500 animate-pulse' : 'bg-white/20'}`} />
-                                <span className="text-xs font-bold text-white/50 uppercase tracking-widest">
-                                    {isAnalyzing ? "Analyzing..." : isSessionActive ? "Live" : "Camera Offline"}
-                                </span>
+            <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-5 px-4 pb-10 pt-6 sm:gap-6 sm:px-6">
+                {/* Webcam — primary focus */}
+                <section className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/50 shadow-2xl shadow-black/40">
+                    <div className="flex items-center justify-between border-b border-zinc-800/80 px-4 py-2.5">
+                        <div className="flex items-center gap-2">
+                            <span
+                                className={`h-2 w-2 rounded-full ${isSessionActive ? "animate-pulse bg-red-500" : "bg-zinc-600"}`}
+                            />
+                            <span className="text-xs font-medium text-zinc-500">
+                                {isAnalyzing ? "Reading room…" : isSessionActive ? "Live" : "Camera off"}
+                            </span>
+                        </div>
+                        <Camera className="h-4 w-4 text-zinc-600" />
+                    </div>
+                    <div className="relative aspect-video w-full bg-black">
+                        <video
+                            ref={videoRef}
+                            autoPlay
+                            playsInline
+                            muted
+                            className={`absolute inset-0 h-full w-full object-cover ${isSessionActive ? "opacity-100" : "opacity-0"}`}
+                        />
+                        {!isSessionActive && (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-8 text-center text-zinc-500">
+                                <Camera className="h-10 w-10 opacity-40" />
+                                <p className="max-w-xs text-sm leading-relaxed">Turn on the session to use your webcam.</p>
                             </div>
-                            <Camera className="w-4 h-4 text-white/20" />
-                        </div>
-                        <div className="flex-1 relative bg-black/50 flex items-center justify-center pt-16">
-                            <video ref={videoRef} autoPlay playsInline muted
-                                className={`w-full h-full object-cover transition-opacity duration-500 ${isSessionActive ? 'opacity-100' : 'opacity-0 absolute inset-0'}`} />
-                            {!isSessionActive && (
-                                <div className="text-center text-white/20 flex flex-col items-center gap-4 relative z-10 p-12">
-                                    <Camera className="w-12 h-12 mb-2 opacity-50" />
-                                    <p className="text-lg">Click &quot;Start Session&quot; to activate the camera.</p>
-                                </div>
-                            )}
-                            {isSessionActive && (
-                                <div className="absolute top-20 right-6">
-                                    <div className="bg-black/60 backdrop-blur-md border border-white/10 px-4 py-2 rounded-full flex items-center gap-2">
-                                        <BrainCircuit className="w-4 h-4 text-white/40" />
-                                        <span className="text-xs text-white/60 font-medium">Gemini Vision</span>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                        {/* EQ bars */}
+                        )}
                         {isSessionActive && (
-                            <div className="absolute bottom-0 left-0 right-0 flex items-end justify-center gap-1 h-20 px-8 bg-gradient-to-t from-black/60 to-transparent pointer-events-none">
+                            <div className="pointer-events-none absolute bottom-0 left-0 right-0 flex h-16 items-end justify-center gap-0.5 bg-gradient-to-t from-black/70 to-transparent px-6 pb-2">
                                 {eqBars.map((h, i) => (
-                                    <div key={i} className={`w-3 rounded-t transition-all duration-200 ${currentMood === "party" ? "bg-pink-500/60" : "bg-indigo-500/60"}`}
-                                        style={{ height: `${h}%` }} />
+                                    <div
+                                        key={i}
+                                        className={`w-[5%] max-w-2 rounded-t bg-gradient-to-t ${currentMood === "party" ? "from-fuchsia-600/80 to-pink-500/40" : "from-indigo-600/80 to-violet-500/40"}`}
+                                        style={{ height: `${h}%` }}
+                                    />
                                 ))}
                             </div>
                         )}
-                    </Card>
+                    </div>
+                </section>
 
-                    {/* Live Analysis Feed */}
-                    <Card className="bg-[#080808] border-white/5 p-6 rounded-[32px] flex flex-col min-h-[160px]">
-                        <h3 className="text-sm font-black text-white/50 uppercase tracking-widest mb-4 flex items-center gap-2">
-                            <Mic className="w-4 h-4" /> Live Analysis Feed
-                        </h3>
-                        <ScrollArea className="flex-1 bg-black/40 rounded-2xl border border-white/5 p-4 font-mono text-sm text-white/70 max-h-40">
-                            <div className="space-y-3">
-                                <div className="flex items-start gap-4">
-                                    <span className="text-indigo-400 font-bold shrink-0">{'>'}</span>
-                                    <p className={`leading-relaxed ${isAnalyzing ? 'animate-pulse' : ''}`}>{liveDescription}</p>
-                                </div>
-                                {eventLog.slice(1).map((entry, i) => (
-                                    <div key={i} className="flex items-start gap-4 opacity-40">
-                                        <span className="text-white/30 font-bold shrink-0">{'>'}</span>
-                                        <p className="leading-relaxed text-xs">{entry.description}</p>
-                                    </div>
-                                ))}
-                            </div>
-                        </ScrollArea>
-                    </Card>
-                </div>
-
-                {/* Right: System + Now Playing */}
-                <div className="flex flex-col gap-6">
-                    <Card className="bg-[#080808] border-white/5 p-6 rounded-[32px] flex-1">
-                        <h3 className="text-sm font-black text-white/50 uppercase tracking-widest mb-6 flex items-center gap-2">
-                            <Activity className="w-4 h-4" /> System Activity
-                        </h3>
-                        <div className="space-y-5">
-                            <div className="space-y-2">
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-white/60">Music State</span>
-                                    {!isSessionActive ? (
-                                        <Badge className="bg-white/5 text-white/40 border-white/10">Awaiting Data</Badge>
-                                    ) : overrideLock ? (
-                                        <Badge className={overrideLock === "party" ? "bg-pink-500/20 text-pink-300 border-pink-500/30" : "bg-indigo-500/20 text-indigo-300 border-indigo-500/30"}>
-                                            <Lock className="w-3 h-3 mr-1" /> Locked: {overrideLock}
-                                        </Badge>
-                                    ) : (
-                                        <Badge className="bg-indigo-500/10 text-indigo-400 border-indigo-500/20">Adapting</Badge>
-                                    )}
-                                </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-white/60">Energy Level</span>
-                                    <span className="text-white font-mono">{currentEnergy !== null ? `${currentEnergy} / 10` : "—"}</span>
-                                </div>
-                                {currentTrack && (
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-white/60">BPM / Key</span>
-                                        <span className="text-white font-mono text-xs">{currentTrack.bpm} · {currentTrack.key}</span>
-                                    </div>
-                                )}
-                                <div className="flex justify-between text-sm items-center pt-2">
-                                    <span className="text-white/60">Current Mood</span>
-                                    <div className="text-right">
-                                        <span className={`text-2xl font-black capitalize ${moodColor}`}>{currentMood}</span>
-                                        {currentConfidence !== null && (
-                                            <p className={`text-xs font-bold mt-0.5 ${moodColor} opacity-70`}>
-                                                {Math.round(currentConfidence * 100)}% confident
-                                            </p>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="h-[1px] bg-white/5" />
-
-                            {/* Event log */}
-                            <div>
-                                <h4 className="text-xs font-bold text-white/40 uppercase tracking-widest mb-3">Event Log</h4>
-                                <div className="space-y-2 max-h-36 overflow-y-auto">
-                                    {eventLog.length === 0 ? (
-                                        <div className="text-xs text-white/30 font-medium flex gap-3">
-                                            <span className="text-white/20 font-mono">System</span>
-                                            Initialized. Waiting for session.
-                                        </div>
-                                    ) : eventLog.map((entry, i) => (
-                                        <div key={i} className="text-xs font-medium flex gap-3">
-                                            <span className="text-white/20 font-mono shrink-0">
-                                                {new Date(entry.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-                                            </span>
-                                            <span className={entry.changed ? "text-indigo-300/80" : "text-white/30"}>
-                                                {entry.changed
-                                                    ? `Mood → ${entry.sentiment} (${entry.energy}/10)${entry.track ? ` · ${entry.track.name}` : ""}`
-                                                    : `Stable · ${entry.sentiment} (${entry.energy}/10)`}
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    </Card>
-
-                    {/* Now Playing + Queue */}
-                    <Card className="bg-gradient-to-br from-indigo-900/40 to-purple-900/20 border-white/10 p-6 rounded-[32px]">
-                        <div className="flex items-center gap-4 mb-4">
-                            <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center shrink-0">
-                                {currentTrack ? <Music2 className={`w-6 h-6 ${moodColor}`} /> : <HeartPulse className="w-6 h-6 text-white/40" />}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                                <h4 className="text-white font-bold text-base leading-tight truncate">
-                                    {currentTrack?.name ?? "Waiting for analysis..."}
-                                </h4>
-                                <p className="text-white/50 text-sm truncate">
-                                    {currentTrack?.artist ?? (isSessionActive ? "Analyzing crowd..." : "Start a session")}
-                                </p>
-                                {currentTrack && (
-                                    <p className="text-white/30 text-xs mt-0.5">{currentTrack.genre} · {currentTrack.bpm} BPM · {currentTrack.key}</p>
-                                )}
-                            </div>
-                            {queue.length > 0 && (
-                                <Button onClick={skipTrack} size="icon"
-                                    className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl w-10 h-10 shrink-0">
-                                    <SkipForward className="w-4 h-4 text-white/60" />
-                                </Button>
+                {/* Compact status: mood + song (under webcam) */}
+                <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-4 py-3 sm:px-5">
+                    <div className="grid gap-3 sm:grid-cols-3 sm:gap-4">
+                        <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Mood</p>
+                            <p className={`mt-0.5 text-lg font-semibold capitalize leading-tight ${moodColor}`}>
+                                {currentMood}
+                            </p>
+                            {currentConfidence !== null && (
+                                <p className="text-xs text-zinc-500">{Math.round(currentConfidence * 100)}% confidence</p>
                             )}
                         </div>
-
-                        {/* YouTube player */}
-                        <div className="rounded-2xl overflow-hidden bg-black mb-3">
-                            <div id="yt-player" />
+                        <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Energy</p>
+                            <p className="mt-0.5 font-mono text-lg font-medium text-zinc-100 tabular-nums">
+                                {currentEnergy !== null ? `${currentEnergy} / 10` : "—"}
+                            </p>
+                            {isSessionActive && (
+                                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-zinc-800">
+                                    <div
+                                        className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-fuchsia-500 transition-[width] duration-500"
+                                        style={{ width: `${(currentEnergy ?? 0) * 10}%` }}
+                                    />
+                                </div>
+                            )}
                         </div>
+                        <div className="sm:text-right">
+                            <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Now playing</p>
+                            <p className="mt-0.5 truncate text-sm font-semibold text-zinc-100">
+                                {currentTrack?.name ?? "—"}
+                            </p>
+                            <p className="truncate text-xs text-zinc-500">{currentTrack?.artist ?? "Waiting for a track"}</p>
+                        </div>
+                    </div>
+                    <p className="mt-3 border-t border-zinc-800/80 pt-3 text-sm leading-snug text-zinc-400">
+                        {isAnalyzing ? <span className="animate-pulse">…</span> : null}
+                        {liveDescription}
+                    </p>
+                </section>
 
+                {/* Player + optional queue */}
+                <section className="space-y-3">
+                    <div className="overflow-hidden rounded-xl border border-zinc-800 bg-black">
+                        <div id="yt-player" />
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
                         {currentTrack?.youtube_url && (
-                            <a href={currentTrack.youtube_url} target="_blank" rel="noopener noreferrer"
-                                className="block w-full text-center text-xs font-bold uppercase tracking-widest text-white/50 hover:text-white border border-white/10 rounded-xl py-2 mb-3 transition-colors">
+                            <a
+                                href={currentTrack.youtube_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs font-medium text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
+                            >
                                 Open in YouTube
                             </a>
                         )}
                         {currentTrack && !currentTrack.youtube_id && (
-                            <p className="text-xs text-white/30 text-center mb-3">Add YOUTUBE_API_KEY to backend/.env</p>
+                            <span className="text-xs text-amber-200/80">Set YOUTUBE_API_KEY in backend/.env</span>
                         )}
-
-                        {/* Queue */}
                         {queue.length > 0 && (
-                            <div>
-                                <div className="h-[1px] bg-white/5 mb-3" />
-                                <h5 className="text-xs font-bold text-white/30 uppercase tracking-widest mb-2 flex items-center gap-1">
-                                    <ListMusic className="w-3 h-3" /> Up Next
-                                </h5>
-                                <div className="space-y-2">
-                                    {queue.slice(0, QUEUE_PREFILL).map((t, i) => (
-                                        <div key={i} className="flex items-center gap-3 text-xs">
-                                            <span className="text-white/20 font-mono w-4 shrink-0">{i + 1}</span>
-                                            <div className="min-w-0">
-                                                <p className="text-white/60 truncate font-medium">{t.name}</p>
-                                                <p className="text-white/30 truncate">{t.artist} · {t.bpm} BPM</p>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={skipTrack}
+                                className="ml-auto border-zinc-700 bg-zinc-900/50 text-zinc-200 hover:bg-zinc-800"
+                            >
+                                <SkipForward className="mr-1.5 h-3.5 w-3.5" />
+                                Skip
+                            </Button>
                         )}
-                    </Card>
-                </div>
-            </div>
+                    </div>
+                    {queue.length > 0 && (
+                        <div className="rounded-lg border border-zinc-800/80 bg-zinc-900/30 px-3 py-2">
+                            <p className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                                <ListMusic className="h-3 w-3" />
+                                Up next
+                            </p>
+                            <ul className="space-1.5 text-xs text-zinc-400">
+                                {queue.slice(0, QUEUE_PREFILL).map((t, i) => (
+                                    <li key={i} className="truncate">
+                                        {i + 1}. {t.name} — {t.artist}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                </section>
+
+                {/* Controls */}
+                <section className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                    <div className="flex flex-wrap gap-2">
+                        {!isSessionActive ? (
+                            <Button
+                                onClick={startSession}
+                                className="rounded-lg bg-violet-600 px-6 font-semibold text-white hover:bg-violet-500"
+                            >
+                                <Play className="mr-2 h-4 w-4 fill-current" />
+                                Start session
+                            </Button>
+                        ) : (
+                            <Button
+                                onClick={stopSession}
+                                variant="outline"
+                                className="rounded-lg border-red-500/40 bg-red-950/30 font-semibold text-red-200 hover:bg-red-950/50"
+                            >
+                                <Square className="mr-2 h-4 w-4 fill-current" />
+                                End session
+                            </Button>
+                        )}
+                    </div>
+                    {isSessionActive && (
+                        <div className="flex flex-wrap gap-2">
+                            {overrideLock ? (
+                                <Button
+                                    type="button"
+                                    onClick={clearOverride}
+                                    className={`rounded-lg font-semibold ${
+                                        overrideLock === "party"
+                                            ? "bg-fuchsia-950/50 text-fuchsia-200 ring-1 ring-fuchsia-500/40 hover:bg-fuchsia-950/70"
+                                            : "bg-sky-950/50 text-sky-200 ring-1 ring-sky-500/40 hover:bg-sky-950/70"
+                                    }`}
+                                >
+                                    <Lock className="mr-2 h-4 w-4" />
+                                    Resume auto ({overrideLock})
+                                </Button>
+                            ) : (
+                                <>
+                                    <Button
+                                        type="button"
+                                        onClick={() => forceMode("calm")}
+                                        disabled={isOverriding}
+                                        variant="outline"
+                                        className="rounded-lg border-sky-500/30 font-semibold text-sky-200 hover:bg-sky-950/40"
+                                    >
+                                        <Unlock className="mr-2 h-4 w-4" />
+                                        Calm
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        onClick={() => forceMode("party")}
+                                        disabled={isOverriding}
+                                        variant="outline"
+                                        className="rounded-lg border-fuchsia-500/30 font-semibold text-fuchsia-200 hover:bg-fuchsia-950/40"
+                                    >
+                                        <Unlock className="mr-2 h-4 w-4" />
+                                        Party
+                                    </Button>
+                                </>
+                            )}
+                        </div>
+                    )}
+                </section>
+
+                {/* Collapsed: session log for debugging */}
+                <details className="rounded-lg border border-zinc-800/60 bg-zinc-950/50 text-sm text-zinc-500">
+                    <summary className="cursor-pointer px-4 py-2.5 font-medium text-zinc-400 transition hover:text-zinc-300">
+                        Session log ({eventLog.length})
+                    </summary>
+                    <div className="max-h-40 overflow-y-auto border-t border-zinc-800/60 px-4 py-3 font-mono text-xs leading-relaxed">
+                        {eventLog.length === 0 ? (
+                            <p>No events yet.</p>
+                        ) : (
+                            eventLog.map((entry, i) => (
+                                <div key={i} className="mb-2 border-b border-zinc-800/40 pb-2 last:mb-0 last:border-0">
+                                    <span className="text-zinc-600">
+                                        {new Date(entry.timestamp).toLocaleTimeString()}
+                                    </span>{" "}
+                                    <span className={entry.changed ? "text-violet-300/90" : "text-zinc-500"}>
+                                        {entry.changed
+                                            ? `→ ${entry.sentiment} (${entry.energy})${entry.track ? ` · ${entry.track.name}` : ""}`
+                                            : `Stable · ${entry.sentiment} (${entry.energy})`}
+                                    </span>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </details>
+            </main>
         </div>
     );
 }
