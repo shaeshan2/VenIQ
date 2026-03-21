@@ -9,6 +9,10 @@ export interface Track {
   duration_s: number;
   youtube_id: string | null;
   youtube_url: string | null;
+  // Deezer fields
+  preview_url?: string | null;
+  cover_url?: string | null;
+  deezer_url?: string | null;
 }
 
 export interface AnalysisEntry {

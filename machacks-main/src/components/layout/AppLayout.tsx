@@ -10,7 +10,17 @@ import { useState } from "react";
 export function AppLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const isPublicRoute = pathname === '/' || pathname === '/import';
+    /** Live session: full viewport, no sidebar/nav clutter */
+    const isLiveSession = pathname === '/editor';
     const [isCopilotOpen, setIsCopilotOpen] = useState(false);
+
+    if (isLiveSession) {
+        return (
+            <div className="min-h-screen min-h-[100dvh] bg-zinc-950 text-zinc-100 font-sans antialiased selection:bg-violet-500/25 selection:text-violet-100">
+                {children}
+            </div>
+        );
+    }
 
     if (isPublicRoute) {
         return (

@@ -1,15 +1,164 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Music, Activity, Play, Sparkles, Layers, Camera, BrainCircuit, HeartPulse } from "lucide-react";
+import {
+  Music,
+  Activity,
+  Sparkles,
+  Layers,
+  Camera,
+  BrainCircuit,
+  HeartPulse,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Instrument_Serif } from "next/font/google";
 import Hero from "@/components/ui/animated-shader-hero";
 import React from "react";
+import { useAuth } from "@/contexts/auth-context";
+import { LoginHoverDropdown } from "@/components/auth/login-hover-dropdown";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import {
+  FeatureAnimationGraphic,
+  type FeatureAnimationId,
+} from "@/components/landing/FeatureCardAnimations";
+
+const featureTitleFont = Instrument_Serif({
+  subsets: ["latin"],
+  weight: "400",
+  display: "swap",
+});
+
+const WELCOME_DISMISS_KEY = "soundsmith_welcome_dismissed";
+
+const LANDING_FEATURES: {
+  title: string;
+  label: string;
+  icon: LucideIcon;
+  animation: FeatureAnimationId;
+}[] = [
+  { title: "Real-time Adaptation", label: "DYNAMIC", icon: Sparkles, animation: "clock" },
+  { title: "Emotion Tracking", label: "VISION", icon: Activity, animation: "emotions" },
+  { title: "Therapeutic Layers", label: "AUDIO", icon: Layers, animation: "layers" },
+  { title: "Accessible Design", label: "ELDERLY", icon: HeartPulse, animation: "access" },
+];
+
+function FeaturesSection() {
+  const reduceMotion = useReducedMotion();
+
+  return (
+    <section
+      id="features"
+      className="relative z-10 w-full scroll-mt-24 border-t border-white/[0.06] bg-black py-28"
+      aria-labelledby="features-heading"
+    >
+      <div
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_75%_45%_at_50%_-10%,rgba(99,102,241,0.055),transparent)]"
+        aria-hidden
+      />
+      <div className="relative mx-auto max-w-[1200px] px-6">
+        <div className="mb-14 text-center md:mb-16">
+          <p
+            id="features-heading"
+            className="text-[2.5rem] font-black uppercase leading-tight tracking-[0.35em] text-violet-300 antialiased md:text-[3rem] lg:text-[3.75rem]"
+          >
+            Features
+          </p>
+        </div>
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 lg:gap-6">
+          {LANDING_FEATURES.map((feat, i) => {
+            const Icon = feat.icon;
+            return (
+              <motion.article
+                key={feat.label}
+                initial={
+                  reduceMotion
+                    ? { opacity: 1, y: 0 }
+                    : { opacity: 0, y: 32 }
+                }
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-48px" }}
+                transition={{
+                  duration: 0.6,
+                  delay: reduceMotion ? 0 : 0.08 + i * 0.11,
+                  ease: [0.22, 1, 0.36, 1],
+                }}
+                className={cn(
+                  "group relative flex min-h-[340px] flex-col overflow-hidden rounded-[28px]",
+                  "border border-white/[0.07] bg-[#0a0a0a] p-8",
+                  "transition-[transform,border-color,box-shadow,background-color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                  "hover:-translate-y-1.5 hover:border-violet-500/25 hover:bg-[#0e0e0e]",
+                  "hover:shadow-[0_28px_56px_rgba(0,0,0,0.6),0_0_0_1px_rgba(139,92,246,0.12),0_0_48px_-8px_rgba(124,58,237,0.2)]"
+                )}
+              >
+                <div
+                  className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+                  style={{
+                    background:
+                      "linear-gradient(145deg, rgba(109,40,217,0.12) 0%, transparent 48%, rgba(124,58,237,0.08) 100%)",
+                  }}
+                  aria-hidden
+                />
+                <div className="relative flex shrink-0 items-start justify-between gap-4">
+                  <Icon
+                    className={cn(
+                      "h-6 w-6 shrink-0 stroke-[1.35] text-violet-300/60 transition-all duration-500 ease-out",
+                      "group-hover:translate-y-px group-hover:scale-110 group-hover:text-violet-200"
+                    )}
+                    strokeWidth={1.35}
+                    aria-hidden
+                  />
+                  <span className="shrink-0 rounded-full border border-violet-500/20 bg-violet-950/30 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.22em] text-violet-300/45">
+                    {feat.label}
+                  </span>
+                </div>
+                <div className="relative z-[1] my-4 min-h-[120px] w-full flex-1 overflow-hidden rounded-2xl border border-violet-500/12 bg-gradient-to-b from-violet-950/15 to-black/20">
+                  <FeatureAnimationGraphic
+                    id={feat.animation}
+                    reduceMotion={!!reduceMotion}
+                  />
+                </div>
+                <h4
+                  className={cn(
+                    featureTitleFont.className,
+                    "relative z-[1] mt-auto shrink-0 text-[1.15rem] leading-snug tracking-[-0.01em] text-white md:text-[1.35rem]"
+                  )}
+                >
+                  {feat.title}
+                </h4>
+                <span
+                  className="absolute bottom-8 left-8 h-px w-[calc(100%-4rem)] origin-left scale-x-0 bg-gradient-to-r from-white/45 via-white/20 to-transparent transition-transform duration-500 ease-out group-hover:scale-x-100"
+                  aria-hidden
+                />
+              </motion.article>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 export default function LandingPage() {
   const router = useRouter();
+  const { user, isReady, logout } = useAuth();
+  const [welcomeOpen, setWelcomeOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!user) {
+      setWelcomeOpen(false);
+      return;
+    }
+    if (typeof window !== "undefined" && sessionStorage.getItem(WELCOME_DISMISS_KEY) === "1") {
+      setWelcomeOpen(false);
+      return;
+    }
+    setWelcomeOpen(true);
+  }, [user]);
 
   return (
     <div className="min-h-screen bg-[#020202] text-white overflow-hidden font-sans selection:bg-indigo-500/30 selection:text-indigo-200">
@@ -17,17 +166,59 @@ export default function LandingPage() {
       <nav className="fixed top-0 left-0 right-0 h-20 border-b border-white/5 bg-[#020202]/50 backdrop-blur-2xl z-50 flex items-center justify-between px-6 md:px-12">
         <Link href="/" className="flex items-center gap-3 group cursor-pointer">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-indigo-500/20 group-hover:scale-105 transition-transform">
-            <span className="text-white font-black text-2xl uppercase tracking-tighter">S</span>
+            <span className="text-white font-black text-2xl uppercase tracking-tighter">V</span>
           </div>
-          <span className="font-black text-2xl tracking-tight text-white group-hover:text-indigo-200 transition-colors">SoundSmith</span>
+          <span className="font-black text-2xl tracking-tight bg-gradient-to-r from-violet-300 via-fuchsia-300 to-pink-300 bg-clip-text text-transparent">Ven<span className="text-white">IQ</span></span>
         </Link>
         <div className="hidden md:flex items-center gap-8 text-sm font-bold uppercase tracking-widest text-white/50">
-          <span className="hover:text-white cursor-pointer transition-colors">Features</span>
+          <a
+            href="#features"
+            className="hover:text-white cursor-pointer transition-colors"
+            onClick={(e) => {
+              e.preventDefault();
+              document.getElementById("features")?.scrollIntoView({
+                behavior: "smooth",
+                block: "start",
+              });
+            }}
+          >
+            Features
+          </a>
           <span className="hover:text-white cursor-pointer transition-colors">Use Cases</span>
           <span className="hover:text-white cursor-pointer transition-colors">Pricing</span>
         </div>
-        <div className="flex items-center gap-6">
-          <span className="hidden md:block text-sm font-bold text-white/50 hover:text-white cursor-pointer transition-colors">Sign In</span>
+        <div className="flex items-center gap-3 sm:gap-6">
+          {!isReady ? (
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-24 animate-pulse rounded-full bg-white/10" />
+              <div className="hidden h-10 w-28 animate-pulse rounded-full bg-white/10 sm:block" />
+            </div>
+          ) : user ? (
+            <>
+              <span className="hidden min-w-0 sm:block">
+                <span className="block text-[10px] font-bold uppercase tracking-widest text-indigo-400/90">
+                  Welcome
+                </span>
+                <span className="block truncate font-mono text-sm font-semibold text-white/90">
+                  {user.email ?? user.username}
+                </span>
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  logout();
+                  setWelcomeOpen(false);
+                  toast.message("Signed out", { description: "See you next time." });
+                }}
+                className="h-9 rounded-full px-4 text-xs font-bold uppercase tracking-widest text-white/50 hover:bg-white/10 hover:text-white"
+              >
+                Sign out
+              </Button>
+            </>
+          ) : (
+            <LoginHoverDropdown />
+          )}
           <Button
             onClick={() => router.push('/editor')}
             className="rounded-full bg-white text-black hover:bg-gray-100 font-black uppercase text-[10px] tracking-widest h-10 px-6 transition-all hover:scale-105 active:scale-95"
@@ -37,13 +228,49 @@ export default function LandingPage() {
         </div>
       </nav>
 
+      <AnimatePresence>
+        {user && welcomeOpen && isReady ? (
+          <motion.div
+            key="welcome"
+            initial={{ opacity: 0, y: -12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ type: "spring", stiffness: 380, damping: 28 }}
+            className="pointer-events-none fixed top-20 left-0 right-0 z-40 flex justify-center px-4"
+          >
+            <div className="pointer-events-auto mt-3 flex max-w-lg items-center gap-3 rounded-2xl border border-white/10 bg-black/70 py-2.5 pl-5 pr-2 shadow-[0_20px_50px_rgba(0,0,0,0.45)] shadow-indigo-500/10 backdrop-blur-xl">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500/30 to-purple-600/20 ring-1 ring-indigo-500/30">
+                <Sparkles className="h-5 w-5 text-indigo-300" />
+              </div>
+              <p className="min-w-0 flex-1 text-sm leading-snug text-white/90">
+                <span className="font-bold text-white">Welcome!</span>{" "}
+                <span className="text-white/50">You&apos;re signed in as</span>{" "}
+                <span className="font-mono text-indigo-300">{user.email ?? user.username}</span>
+                <span className="text-white/40"> — start a session when you&apos;re ready.</span>
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  sessionStorage.setItem(WELCOME_DISMISS_KEY, "1");
+                  setWelcomeOpen(false);
+                }}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white/35 transition-colors hover:bg-white/10 hover:text-white"
+                aria-label="Dismiss welcome message"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
       <main className="flex-1 w-full flex flex-col items-center">
         <Hero
           headline={{
             line1: "Music that",
             line2: "understands you."
           }}
-          subtitle="SoundSmith is an adaptive music therapy system that listens to your emotions and reshapes music in real time to heal, calm, and support."
+          subtitle="VenIQ is a crowd-aware DJ system that reads the room in real time and adapts the music to match the energy of the moment."
           buttons={{
             primary: {
               text: "Start Session",
@@ -88,25 +315,8 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Features Section */}
-        <section className="w-full max-w-[1200px] px-6 py-24 relative z-10">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {[
-              { title: "Real-time Adaptation", label: "DYNAMIC", icon: Sparkles },
-              { title: "Emotion Tracking", label: "VISION", icon: Activity },
-              { title: "Therapeutic Layers", label: "AUDIO", icon: Layers },
-              { title: "Accessible Design", label: "ELDERLY", icon: HeartPulse }
-            ].map((feat, i) => (
-              <div key={i} className="p-8 rounded-[32px] bg-black border border-white/10 hover:border-white/20 transition-all flex flex-col justify-between min-h-[220px] group">
-                <div className="flex justify-between items-start">
-                  <feat.icon className="w-6 h-6 text-white/30 group-hover:text-white transition-colors" />
-                  <span className="text-[9px] font-black tracking-widest uppercase text-white/20 bg-white/5 px-2 py-1 rounded-sm">{feat.label}</span>
-                </div>
-                <h4 className="text-xl font-bold text-white tracking-tight">{feat.title}</h4>
-              </div>
-            ))}
-          </div>
-        </section>
+        {/* Features — dark cards, serif titles, staggered motion */}
+        <FeaturesSection />
 
         {/* Final CTA */}
         <section className="w-full py-40 flex flex-col items-center text-center border-t border-white/5 bg-[radial-gradient(circle_at_50%_50%,rgba(99,102,241,0.05),transparent)] relative z-10">

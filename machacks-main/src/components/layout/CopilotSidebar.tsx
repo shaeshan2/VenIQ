@@ -35,7 +35,7 @@ export function CopilotSidebar() {
                         <Bot className="w-6 h-6 text-indigo-400" />
                     </div>
                     <div>
-                        <p className="text-white/80 text-sm font-bold mt-4">I am SoundSmith Copilot.</p>
+                        <p className="text-white/80 text-sm font-bold mt-4">I am VenIQ Copilot.</p>
                         <p className="text-white/40 text-[11px] mt-2 max-w-[200px] leading-relaxed mx-auto">Ask me to generate stems, edit tracks, or rewrite lyrics.</p>
                     </div>
                 </div>

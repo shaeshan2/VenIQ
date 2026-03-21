@@ -5,16 +5,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { useAuth } from "@/contexts/auth-context";
+import { UserMenu } from "@/components/auth/user-menu";
+import { LoginHoverDropdown } from "@/components/auth/login-hover-dropdown";
 
 export function Navbar({ onToggleCopilot, isCopilotOpen }: { onToggleCopilot?: () => void, isCopilotOpen?: boolean }) {
+    const { user, isReady, openAuthModal } = useAuth();
     return (
         <nav className="h-16 border-b border-white/10 bg-black/40 backdrop-blur-md flex items-center justify-between px-6 sticky top-0 z-50">
             <div className="flex items-center gap-8">
                 <Link href="/" className="flex items-center gap-2 group cursor-pointer">
                     <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-indigo-500/20 group-hover:scale-110 transition-transform">
-                        <span className="text-white font-bold text-xl uppercase tracking-tighter">S</span>
+                        <span className="text-white font-bold text-xl uppercase tracking-tighter">V</span>
                     </div>
-                    <span className="font-bold text-xl bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60 tracking-tight">SoundSmith</span>
+                    <span className="font-bold text-xl bg-clip-text text-transparent bg-gradient-to-r from-violet-300 via-fuchsia-300 to-pink-300 tracking-tight">Ven<span className="text-white">IQ</span></span>
                 </Link>
 
                 <div className="hidden md:flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-3 py-1 text-sm text-white/60 hover:bg-white/10 transition-colors cursor-pointer group">
@@ -54,9 +58,41 @@ export function Navbar({ onToggleCopilot, isCopilotOpen }: { onToggleCopilot?: (
                     <Sparkles className="w-4 h-4" />
                 </Button>
                 <div className="h-8 w-[1px] bg-white/10 mx-1" />
-                <Button size="icon" variant="ghost" className="rounded-full w-8 h-8 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                    <User className="w-4 h-4" />
-                </Button>
+                {!isReady ? (
+                    <div className="flex items-center gap-2">
+                        <div className="h-8 w-20 animate-pulse rounded-full bg-white/10" />
+                        <div className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-white/10" />
+                    </div>
+                ) : user ? (
+                    <>
+                        <span
+                            className="hidden lg:inline max-w-[160px] truncate text-left text-xs font-semibold leading-tight text-white/90"
+                            title={user.username}
+                        >
+                            <span className="block text-[10px] font-bold uppercase tracking-widest text-indigo-400/80">
+                                Welcome
+                            </span>
+                            <span className="block truncate font-mono text-indigo-200">{user.username}</span>
+                        </span>
+                        <UserMenu />
+                    </>
+                ) : (
+                    <>
+                        <LoginHoverDropdown
+                            triggerClassName="h-8 border border-white/15 bg-white/5 px-3 text-[10px] text-white/80 hover:bg-white/10 sm:text-xs"
+                        />
+                        <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => openAuthModal("login")}
+                            className="h-8 w-8 rounded-full border border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white"
+                            aria-label="Log in with demo account"
+                        >
+                            <User className="h-4 w-4" />
+                        </Button>
+                    </>
+                )}
             </div>
         </nav>
     );
