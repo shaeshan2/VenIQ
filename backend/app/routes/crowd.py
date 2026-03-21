@@ -15,6 +15,7 @@ DELETE /api/crowd/history
   - Clears the log
 """
 
+import time
 from datetime import datetime
 from flask import Blueprint, request, jsonify, current_app
 from app.services.crowd import describe_crowd
@@ -25,7 +26,14 @@ from app.routes.playback import set_current_track
 crowd_bp = Blueprint("crowd", __name__)
 
 # Persists between requests — tracks previous scene state + played songs
-_state: dict = {"energy": None, "sentiment": None, "recently_played": []}
+_state: dict = {
+    "energy": None,
+    "sentiment": None,
+    "recently_played": [],
+    "last_changed_at": 0.0,  # epoch seconds of last song change
+}
+
+SONG_CHANGE_COOLDOWN = 30  # seconds — ignore shifts for this long after a change
 
 # Full log of every analysis — sent to frontend for display
 _history: list[dict] = []
@@ -49,11 +57,15 @@ def analyze():
 
     prev_energy    = _state["energy"]
     prev_sentiment = _state["sentiment"]
+    secs_since_change = time.time() - _state["last_changed_at"]
 
     energy_shifted    = prev_energy is None or abs(new_energy - prev_energy) >= threshold
     sentiment_shifted = prev_sentiment != new_sentiment
 
-    if not energy_shifted and not sentiment_shifted:
+    # Require BOTH a shift AND the cooldown to have elapsed before changing again
+    if not (energy_shifted or sentiment_shifted) or (
+        prev_energy is not None and secs_since_change < SONG_CHANGE_COOLDOWN
+    ):
         entry = {
             "timestamp":   timestamp,
             "changed":     False,
@@ -66,8 +78,9 @@ def analyze():
         _history.append(entry)
         return jsonify(entry)
 
-    _state["energy"]    = new_energy
-    _state["sentiment"] = new_sentiment
+    _state["energy"]          = new_energy
+    _state["sentiment"]       = new_sentiment
+    _state["last_changed_at"] = time.time()
 
     song = get_song(new_sentiment, new_energy, _state["recently_played"])
     track = None
@@ -117,7 +130,8 @@ def history():
 @crowd_bp.route("/history", methods=["DELETE"])
 def clear_history():
     _history.clear()
-    _state["energy"] = None
-    _state["sentiment"] = None
+    _state["energy"]          = None
+    _state["sentiment"]       = None
     _state["recently_played"] = []
+    _state["last_changed_at"] = 0.0
     return jsonify({"cleared": True})
