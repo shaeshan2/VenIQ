@@ -2,7 +2,7 @@
 
 Implements:
 - Spotify preview player (`preview_url` 30s clip)
-- DJ override panel (6 sentiment buttons)
+- DJ override mode toggle + manual sentiment menu
 - `POST /api/playback/override`
 - `GET /api/playback/current` polling sync
 - "Now Playing" with name, artist, source
@@ -56,6 +56,12 @@ const mountEl = document.getElementById("dj-controls-root");
 const person2 = await initPerson2UI(mountEl, {
   playbackBaseUrl: "http://localhost:5000/api/playback",
   pollIntervalMs: 3000,
+  onOverrideStateChange: (enabled) => {
+    // Person 1 can pause camera/analyze loop here to save credits:
+    // enabled=true  -> DJ override active (pause AI loop)
+    // enabled=false -> AI auto mode (resume AI loop)
+    console.log("DJ override enabled?", enabled);
+  },
 });
 
 // From Person 1 analyze loop result:
@@ -76,6 +82,12 @@ person2.syncFromAnalyzeResponse({
 // Optional cleanup if route/page unmounts
 // person2.stop();
 ```
+
+### AI-offload behavior
+
+- When override is disabled (`Mode: AI Auto`), Person 1 should run normal `/api/crowd/analyze` loop.
+- When override is enabled (`Mode: DJ Override`), Person 1 should pause analyze calls to reduce model usage.
+- `person2.syncFromAnalyzeResponse(...)` ignores AI responses while override is enabled.
 
 ## Required Deliverable Function
 

@@ -11,6 +11,7 @@ export async function initPerson2UI(
   {
     playbackBaseUrl = "http://localhost:5000/api/playback",
     pollIntervalMs = 3000,
+    onOverrideStateChange = null,
   } = {}
 ) {
   if (!container) {
@@ -19,6 +20,7 @@ export async function initPerson2UI(
 
   const player = createMusicPlayer(container);
   const controls = createDjControls(container, {
+    onOverrideStateChange,
     onSentimentClick: async (sentiment) => {
       const state = await overrideBySentiment(sentiment, playbackBaseUrl);
       player.update(state);
@@ -46,6 +48,7 @@ export async function initPerson2UI(
   return {
     syncFromAnalyzeResponse(analyzeResponse) {
       if (!analyzeResponse || typeof analyzeResponse !== "object") return;
+      if (controls.isOverrideEnabled()) return;
 
       player.setCrowdContext({
         sentiment: analyzeResponse.sentiment || null,
@@ -59,6 +62,12 @@ export async function initPerson2UI(
     stop() {
       stopPolling();
       player.destroy();
+    },
+    isOverrideEnabled() {
+      return controls.isOverrideEnabled();
+    },
+    setOverrideEnabled(enabled) {
+      controls.setOverrideEnabled(enabled);
     },
     player,
     controls,
