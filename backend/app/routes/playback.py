@@ -1,15 +1,13 @@
 """
 Playback State Route
 
-Tracks what song is currently "playing" and allows the DJ to override it.
-State is in-memory — sufficient for a single-session hackathon demo.
-
 GET  /api/playback/current   → what's currently queued/playing
 POST /api/playback/override  → DJ manually picks a different song
 """
 
 from flask import Blueprint, request, jsonify
-from app.services.spotify import get_recommendations
+from app.services.songs_db import get_song
+from app.services.youtube import search_youtube
 
 playback_bp = Blueprint("playback", __name__)
 
@@ -24,37 +22,41 @@ def set_current_track(track: dict, source: str = "auto") -> None:
 
 @playback_bp.route("/current", methods=["GET"])
 def current():
-    """
-    Returns the currently queued track.
-
-    Response:
-        { "track": { name, artist, uri, preview_url, spotify_url } | null,
-          "source": "auto" | "override" | null }
-    """
     return jsonify(_current)
 
 
 @playback_bp.route("/override", methods=["POST"])
 def override():
     """
-    DJ manually selects a different song.
-
     Body (JSON), one of:
-        { "track": { "name": "...", "artist": "...", "uri": "...", ... } }
-        { "sentiment": "party" }  → fetch a fresh recommendation for that sentiment
-
-    Response:
-        { "track": {...}, "source": "override" }
+        { "track": { "name": "...", "artist": "...", ... } }
+        { "sentiment": "party" }  → pick a fresh song for that sentiment
     """
     data = request.get_json(silent=True) or {}
 
     if "track" in data:
         track = data["track"]
+
     elif "sentiment" in data:
-        tracks = get_recommendations(data["sentiment"], limit=1)
-        if not tracks:
+        sentiment = data["sentiment"]
+        # Map sentiment to an energy midpoint for selection
+        energy = 8 if sentiment == "party" else 3
+        song = get_song(sentiment, energy)
+        if not song:
             return jsonify({"error": "No tracks found for that sentiment"}), 404
-        track = tracks[0]
+
+        yt = search_youtube(song["name"], song["artist"])
+        track = {
+            "name":        song["name"],
+            "artist":      song["artist"],
+            "bpm":         song["bpm"],
+            "key":         song["key"],
+            "genre":       song["genre"],
+            "duration_s":  song["duration_s"],
+            "youtube_id":  yt["video_id"]    if yt else None,
+            "youtube_url": yt["youtube_url"] if yt else None,
+        }
+
     else:
         return jsonify({"error": "Provide 'track' or 'sentiment'"}), 400
 

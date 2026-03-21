@@ -4,12 +4,12 @@ Crowd Analysis Route
 POST /api/crowd/analyze
   - Receives a base64 webcam frame
   - Runs Gemini scene description
-  - Checks if crowd energy has shifted significantly
-  - If shifted: fetches Spotify recommendations and returns a new track
-  - If stable:  returns { "changed": false } so frontend keeps playing
+  - Checks if crowd energy or sentiment has shifted significantly
+  - If shifted: picks a song from the curated database, searches YouTube, returns it
+  - If stable:  returns { "changed": false }
 
 GET /api/crowd/history
-  - Returns the full log of every analysis result (for frontend display + testing)
+  - Returns the full log of every analysis result
 
 DELETE /api/crowd/history
   - Clears the log
@@ -18,13 +18,14 @@ DELETE /api/crowd/history
 from datetime import datetime
 from flask import Blueprint, request, jsonify, current_app
 from app.services.crowd import describe_crowd
-from app.services.spotify import get_recommendations
+from app.services.songs_db import get_song
+from app.services.youtube import search_youtube
 from app.routes.playback import set_current_track
 
 crowd_bp = Blueprint("crowd", __name__)
 
-# Persists between requests — tracks previous scene state
-_state: dict = {"energy": None, "sentiment": None}
+# Persists between requests — tracks previous scene state + played songs
+_state: dict = {"energy": None, "sentiment": None, "recently_played": []}
 
 # Full log of every analysis — sent to frontend for display
 _history: list[dict] = []
@@ -32,18 +33,6 @@ _history: list[dict] = []
 
 @crowd_bp.route("/analyze", methods=["POST"])
 def analyze():
-    """
-    Body (JSON):
-        image_base64 (str): base64-encoded JPEG frame from the webcam
-
-    Response (crowd stable):
-        { "changed": false, "energy": 5, "description": "...", "sentiment": "calm", "timestamp": "..." }
-
-    Response (crowd shifted):
-        { "changed": true, "energy": 8, "description": "...", "sentiment": "party",
-          "track": { "name": "...", "artist": "...", "uri": "...", "preview_url": "...", "spotify_url": "..." },
-          "timestamp": "..." }
-    """
     data = request.get_json(silent=True) or {}
     image_b64 = data.get("image_base64")
 
@@ -58,10 +47,10 @@ def analyze():
     threshold     = current_app.config.get("ENERGY_CHANGE_THRESHOLD", 2)
     timestamp     = datetime.utcnow().isoformat() + "Z"
 
-    prev_energy   = _state["energy"]
+    prev_energy    = _state["energy"]
     prev_sentiment = _state["sentiment"]
 
-    energy_shifted   = prev_energy is None or abs(new_energy - prev_energy) >= threshold
+    energy_shifted    = prev_energy is None or abs(new_energy - prev_energy) >= threshold
     sentiment_shifted = prev_sentiment != new_sentiment
 
     if not energy_shifted and not sentiment_shifted:
@@ -80,9 +69,28 @@ def analyze():
     _state["energy"]    = new_energy
     _state["sentiment"] = new_sentiment
 
-    tracks = get_recommendations(new_sentiment, limit=5)
-    track = tracks[0] if tracks else None
-    if track:
+    song = get_song(new_sentiment, new_energy, _state["recently_played"])
+    track = None
+
+    if song:
+        yt = search_youtube(song["name"], song["artist"])
+        track = {
+            "name":        song["name"],
+            "artist":      song["artist"],
+            "bpm":         song["bpm"],
+            "key":         song["key"],
+            "genre":       song["genre"],
+            "duration_s":  song["duration_s"],
+            "youtube_id":  yt["video_id"]    if yt else None,
+            "youtube_url": yt["youtube_url"] if yt else None,
+        }
+        # Remember this song to avoid immediate repeats
+        played_key = f"{song['name']}|{song['artist']}"
+        if played_key not in _state["recently_played"]:
+            _state["recently_played"].append(played_key)
+            if len(_state["recently_played"]) > 20:
+                _state["recently_played"].pop(0)
+
         set_current_track(track, source="auto")
 
     entry = {
@@ -94,8 +102,8 @@ def analyze():
         "description": description,
         "track":       track,
     }
-    if not tracks:
-        entry["error"] = "Spotify returned no tracks"
+    if not track:
+        entry["error"] = "No track found"
 
     _history.append(entry)
     return jsonify(entry)
@@ -103,24 +111,13 @@ def analyze():
 
 @crowd_bp.route("/history", methods=["GET"])
 def history():
-    """
-    Returns every analysis result since the server started (or last clear).
-
-    Response:
-        {
-          "count": 12,
-          "history": [
-            { "timestamp": "...", "changed": false, "energy": 5, "sentiment": "calm", "description": "...", "track": null },
-            { "timestamp": "...", "changed": true,  "energy": 8, "sentiment": "party", "description": "...", "track": {...} },
-            ...
-          ]
-        }
-    """
     return jsonify({"count": len(_history), "history": _history})
 
 
 @crowd_bp.route("/history", methods=["DELETE"])
 def clear_history():
-    """Wipe the log (useful between demo runs)."""
     _history.clear()
+    _state["energy"] = None
+    _state["sentiment"] = None
+    _state["recently_played"] = []
     return jsonify({"cleared": True})

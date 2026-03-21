@@ -2,23 +2,42 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Camera, Play, Square, Activity, HeartPulse, BrainCircuit, Mic, Music2 } from "lucide-react";
+import { Camera, Play, Square, Activity, HeartPulse, BrainCircuit, Mic, Music2, Zap } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { analyzeFrame, clearHistory, overrideSentiment, type AnalysisEntry, type Track } from "@/lib/api";
 
-const CAPTURE_INTERVAL_MS = 7000; // capture every 7 seconds
+const CAPTURE_INTERVAL_MS = 7000;
+
+// ── YouTube IFrame API types ───────────────────────────────────────────────────
+declare global {
+    interface Window {
+        YT: { Player: new (id: string, opts: object) => YTPlayer };
+        onYouTubeIframeAPIReady: () => void;
+    }
+}
+interface YTPlayer {
+    loadVideoById(id: string): void;
+    playVideo(): void;
+    pauseVideo(): void;
+    setVolume(v: number): void;
+    setPlaybackRate(r: number): void;
+    getPlaybackRate(): number;
+}
 
 export default function LiveSessionPage() {
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const videoRef   = useRef<HTMLVideoElement>(null);
+    const canvasRef  = useRef<HTMLCanvasElement>(null);
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const audioRef = useRef<HTMLAudioElement | null>(null);
+    const ytPlayerRef = useRef<YTPlayer | null>(null);
+    const ytReadyRef  = useRef(false);
+    const beatCleanupRef = useRef<() => void>(() => {});
 
     const [isSessionActive, setIsSessionActive] = useState(false);
     const [stream, setStream] = useState<MediaStream | null>(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [isOverriding, setIsOverriding] = useState(false);
 
     // Live analysis state
     const [currentMood, setCurrentMood] = useState<string>("None");
@@ -28,57 +47,170 @@ export default function LiveSessionPage() {
     const [liveDescription, setLiveDescription] = useState("Awaiting session start...");
     const [eventLog, setEventLog] = useState<AnalysisEntry[]>([]);
 
-    /** Capture the current video frame as a base64 JPEG string. */
+    // ── YouTube IFrame setup ─────────────────────────────────────────────────
+
+    useEffect(() => {
+        // Inject YouTube IFrame API script once
+        if (document.getElementById("yt-api-script")) return;
+        const tag = document.createElement("script");
+        tag.id = "yt-api-script";
+        tag.src = "https://www.youtube.com/iframe_api";
+        document.head.appendChild(tag);
+
+        window.onYouTubeIframeAPIReady = () => {
+            ytPlayerRef.current = new window.YT.Player("yt-player", {
+                height: "180",
+                width: "100%",
+                playerVars: { autoplay: 1, controls: 1, rel: 0, modestbranding: 1 },
+                events: {
+                    onReady: (e: { target: YTPlayer }) => {
+                        e.target.setVolume(80);
+                        ytReadyRef.current = true;
+                    },
+                },
+            });
+        };
+    }, []);
+
+    // Load new video when track changes and adjust playback rate by energy
+    useEffect(() => {
+        if (!currentTrack?.youtube_id || !ytReadyRef.current) return;
+        const yt = ytPlayerRef.current;
+        if (!yt) return;
+
+        yt.loadVideoById(currentTrack.youtube_id);
+
+        // Slight tempo nudge: calm slows down, party speeds up
+        const energy = currentEnergy ?? 5;
+        const rate = energy >= 8 ? 1.25 : energy <= 3 ? 0.75 : 1.0;
+        setTimeout(() => yt.setPlaybackRate(rate), 1500);
+    }, [currentTrack?.youtube_id, currentEnergy]);
+
+    // ── Tone.js beat overlay ──────────────────────────────────────────────────
+
+    const updateBeatLayer = useCallback(async (mood: string, bpm: number, energy: number) => {
+        // Clean up the previous loop
+        beatCleanupRef.current();
+
+        const Tone = await import("tone");
+        if (Tone.getContext().state !== "running") await Tone.start();
+
+        Tone.getTransport().stop();
+        Tone.getTransport().cancel();
+        Tone.getTransport().bpm.value = bpm;
+
+        const disposables: { dispose(): void }[] = [];
+        let cancelled = false;
+
+        if (mood === "party" && energy >= 6) {
+            // Kick drum on 1 and 3, hi-hat on 2 and 4
+            const vol  = new Tone.Volume(-15 + Math.min((energy - 6) * 2, 6));
+            const kick = new Tone.MembraneSynth({
+                pitchDecay: 0.08, octaves: 6,
+                envelope: { attack: 0.001, decay: 0.35, sustain: 0, release: 0.1 },
+            }).connect(vol);
+            vol.toDestination();
+
+            const hihatVol = new Tone.Volume(-22);
+            const hihat = new Tone.MetalSynth({
+                frequency: 400, harmonicity: 5.1, modulationIndex: 32,
+                resonance: 4000, octaves: 1.5,
+                envelope: { attack: 0.001, decay: 0.1, release: 0.01 },
+            }).connect(hihatVol);
+            hihatVol.toDestination();
+
+            const seq = new Tone.Sequence(
+                (time, note) => {
+                    if (cancelled) return;
+                    if (note === "kick") kick.triggerAttackRelease("C1", "8n", time);
+                    if (note === "hat")  hihat.triggerAttackRelease("16n", time);
+                },
+                ["kick", "hat", null, "hat", "kick", "hat", null, "hat"],
+                "8n",
+            );
+            seq.start(0);
+            Tone.getTransport().start();
+            disposables.push(kick, hihat, hihatVol, vol, seq);
+
+        } else if (mood === "calm") {
+            const reverb = new Tone.Reverb({ decay: 5, wet: 0.75 });
+            await reverb.ready;
+            const vol   = new Tone.Volume(-20);
+            const synth = new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "sine" },
+                envelope: { attack: 1.5, decay: 0.5, sustain: 0.8, release: 3 },
+            });
+            synth.connect(vol);
+            vol.connect(reverb);
+            reverb.toDestination();
+
+            const chords = [["C4","E4","G4"], ["A3","C4","E4"], ["F3","A3","C4"], ["G3","B3","D4"]];
+            let i = 0;
+            const loop = new Tone.Loop((time) => {
+                if (!cancelled) synth.triggerAttackRelease(chords[i++ % chords.length], "2n", time, 0.2);
+            }, "2m");
+            loop.start(0);
+            Tone.getTransport().start();
+            disposables.push(synth, vol, reverb, loop);
+        }
+
+        beatCleanupRef.current = () => {
+            cancelled = true;
+            Tone.getTransport().stop();
+            Tone.getTransport().cancel();
+            disposables.forEach(d => { try { d.dispose(); } catch { /* already disposed */ } });
+        };
+    }, []);
+
+    // Trigger beat layer whenever track/mood changes
+    useEffect(() => {
+        if (!isSessionActive || !currentTrack) return;
+        const bpm = currentTrack.bpm ?? (currentMood === "party" ? 128 : 80);
+        updateBeatLayer(currentMood, bpm, currentEnergy ?? 5);
+        return () => { beatCleanupRef.current(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentMood, currentTrack?.youtube_id]);
+
+    // ── Webcam & analysis ─────────────────────────────────────────────────────
+
     const captureFrame = useCallback((): string | null => {
-        const video = videoRef.current;
+        const video  = videoRef.current;
         const canvas = canvasRef.current;
         if (!video || !canvas || video.readyState < 2) return null;
-
-        canvas.width = 640;
+        canvas.width  = 640;
         canvas.height = 480;
         const ctx = canvas.getContext("2d");
         if (!ctx) return null;
-
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        // Remove the "data:image/jpeg;base64," prefix — backend expects raw base64
         return canvas.toDataURL("image/jpeg", 0.7).split(",")[1];
     }, []);
 
-    /** Send one frame to the backend and update UI with the result. */
     const runAnalysis = useCallback(async () => {
         const frame = captureFrame();
         if (!frame) return;
-
         setIsAnalyzing(true);
         setLiveDescription("Analyzing crowd...");
-
         try {
             const result = await analyzeFrame(frame);
-
             setCurrentMood(result.sentiment ?? "Unknown");
             setCurrentConfidence(result.confidence ?? null);
             setCurrentEnergy(result.energy);
             setLiveDescription(result.description || "No description returned.");
-            setEventLog(prev => [result, ...prev].slice(0, 50)); // keep last 50
-
-            if (result.changed && result.track) {
-                setCurrentTrack(result.track);
-            }
-        } catch (err) {
+            setEventLog(prev => [result, ...prev].slice(0, 50));
+            if (result.changed && result.track) setCurrentTrack(result.track);
+        } catch {
             setLiveDescription("Backend unreachable. Is the Flask server running?");
-            console.error("Analysis error:", err);
         } finally {
             setIsAnalyzing(false);
         }
     }, [captureFrame]);
 
     const startSession = async () => {
-        // Unlock audio context on user gesture so subsequent .play() calls work
+        // Unlock AudioContext on user gesture so Tone.js can play
         try {
-            const ctx = new AudioContext();
-            await ctx.resume();
-            ctx.close();
-        } catch { /* not all browsers need this */ }
+            const Tone = await import("tone");
+            await Tone.start();
+        } catch { /* ok */ }
 
         try {
             const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
@@ -94,8 +226,6 @@ export default function LiveSessionPage() {
         }
     };
 
-    const [isOverriding, setIsOverriding] = useState(false);
-
     const forceMode = async (mode: "party" | "calm") => {
         setIsOverriding(true);
         try {
@@ -103,6 +233,7 @@ export default function LiveSessionPage() {
             if (track) {
                 setCurrentTrack(track);
                 setCurrentMood(mode);
+                setCurrentEnergy(mode === "party" ? 8 : 3);
                 setLiveDescription(`DJ override → ${mode} mode`);
             }
         } finally {
@@ -114,6 +245,7 @@ export default function LiveSessionPage() {
         if (stream) stream.getTracks().forEach(t => t.stop());
         if (intervalRef.current) clearInterval(intervalRef.current);
         intervalRef.current = null;
+        beatCleanupRef.current();
         setStream(null);
         setIsSessionActive(false);
         setIsAnalyzing(false);
@@ -121,42 +253,28 @@ export default function LiveSessionPage() {
         setCurrentMood("None");
     };
 
-    // Attach stream to video element
     useEffect(() => {
         if (isSessionActive && videoRef.current && stream) {
             videoRef.current.srcObject = stream;
         }
     }, [isSessionActive, stream]);
 
-    // Start polling when session becomes active
     useEffect(() => {
         if (!isSessionActive) return;
-
-        // Run immediately, then on interval
         runAnalysis();
         intervalRef.current = setInterval(runAnalysis, CAPTURE_INTERVAL_MS);
-
-        return () => {
-            if (intervalRef.current) clearInterval(intervalRef.current);
-        };
+        return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
     }, [isSessionActive, runAnalysis]);
 
-    // Auto-play preview when track changes
-    useEffect(() => {
-        const audio = audioRef.current;
-        if (!audio || !currentTrack?.preview_url) return;
-        audio.src = currentTrack.preview_url;
-        audio.load();
-        audio.play().catch(() => { /* blocked by browser policy — user can press play manually */ });
-    }, [currentTrack?.uri]);
-
-    // Clean up stream on unmount
     useEffect(() => {
         return () => {
             if (stream) stream.getTracks().forEach(t => t.stop());
             if (intervalRef.current) clearInterval(intervalRef.current);
+            beatCleanupRef.current();
         };
     }, [stream]);
+
+    // ── Derived UI ────────────────────────────────────────────────────────────
 
     const moodColor = currentMood === "party"
         ? "text-pink-400"
@@ -164,15 +282,22 @@ export default function LiveSessionPage() {
         ? "text-indigo-400"
         : "text-white/60";
 
+    // Visual EQ bars — 12 bars, heights driven by energy level
+    const energy = currentEnergy ?? 0;
+    const eqBars = Array.from({ length: 12 }, (_, i) => {
+        const base = isSessionActive ? (energy / 10) * 60 : 4;
+        const jitter = isSessionActive ? Math.sin(i * 2.3 + Date.now() / 400) * 12 : 0;
+        return Math.max(4, Math.min(80, base + jitter));
+    });
+
     return (
         <div className="h-full flex flex-col p-8 max-w-7xl mx-auto w-full gap-8 overflow-y-auto">
-            {/* Hidden canvas for frame capture */}
             <canvas ref={canvasRef} className="hidden" />
 
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-4xl font-black text-white tracking-tight">Live DJ Session</h1>
-                    <p className="text-white/40 mt-2">Crowd mood detection · Spotify recommendations · Real-time adaptation.</p>
+                    <p className="text-white/40 mt-2">Crowd mood detection · YouTube playback · Tone.js beat layer · Real-time adaptation.</p>
                 </div>
                 <div className="flex gap-3">
                     {isSessionActive && (
@@ -208,7 +333,7 @@ export default function LiveSessionPage() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 h-full min-h-[500px]">
-                {/* Camera Feed & Analysis Text */}
+                {/* Camera Feed & Analysis */}
                 <div className="lg:col-span-2 flex flex-col gap-6">
                     <Card className="bg-[#050505] border-white/5 overflow-hidden relative rounded-[32px] flex flex-col min-h-[460px]">
                         <div className="p-4 border-b border-white/5 flex items-center justify-between bg-black/40 backdrop-blur-md absolute top-0 left-0 right-0 z-10">
@@ -224,15 +349,13 @@ export default function LiveSessionPage() {
                         <div className="flex-1 relative bg-black/50 flex items-center justify-center pt-16">
                             <video
                                 ref={videoRef}
-                                autoPlay
-                                playsInline
-                                muted
+                                autoPlay playsInline muted
                                 className={`w-full h-full object-cover transition-opacity duration-500 ${isSessionActive ? 'opacity-100' : 'opacity-0 absolute inset-0'}`}
                             />
                             {!isSessionActive && (
                                 <div className="text-center text-white/20 flex flex-col items-center gap-4 relative z-10 p-12">
                                     <Camera className="w-12 h-12 mb-2 opacity-50" />
-                                    <p className="text-lg">Click "Start Session" to activate the camera.</p>
+                                    <p className="text-lg">Click &quot;Start Session&quot; to activate the camera.</p>
                                 </div>
                             )}
                             {isSessionActive && (
@@ -244,6 +367,19 @@ export default function LiveSessionPage() {
                                 </div>
                             )}
                         </div>
+
+                        {/* Visual EQ bars */}
+                        {isSessionActive && (
+                            <div className="absolute bottom-0 left-0 right-0 flex items-end justify-center gap-1 h-20 px-8 bg-gradient-to-t from-black/60 to-transparent pointer-events-none">
+                                {eqBars.map((h, i) => (
+                                    <div
+                                        key={i}
+                                        className={`w-3 rounded-t transition-all duration-200 ${currentMood === "party" ? "bg-pink-500/60" : "bg-indigo-500/60"}`}
+                                        style={{ height: `${h}%` }}
+                                    />
+                                ))}
+                            </div>
+                        )}
                     </Card>
 
                     {/* Live Analysis Feed */}
@@ -254,12 +390,10 @@ export default function LiveSessionPage() {
                         </h3>
                         <ScrollArea className="flex-1 bg-black/40 rounded-2xl border border-white/5 p-4 font-mono text-sm text-white/70 max-h-40">
                             <div className="space-y-3">
-                                {/* Latest description */}
                                 <div className="flex items-start gap-4">
                                     <span className="text-indigo-400 font-bold shrink-0">{'>'}</span>
                                     <p className={`leading-relaxed ${isAnalyzing ? 'animate-pulse' : ''}`}>{liveDescription}</p>
                                 </div>
-                                {/* History entries */}
                                 {eventLog.slice(1).map((entry, i) => (
                                     <div key={i} className="flex items-start gap-4 opacity-40">
                                         <span className="text-white/30 font-bold shrink-0">{'>'}</span>
@@ -271,7 +405,7 @@ export default function LiveSessionPage() {
                     </Card>
                 </div>
 
-                {/* Status Panel & Music Player */}
+                {/* Right panel */}
                 <div className="flex flex-col gap-6">
                     <Card className="bg-[#080808] border-white/5 p-6 rounded-[32px] flex-1">
                         <h3 className="text-sm font-black text-white/50 uppercase tracking-widest mb-6 flex items-center gap-2">
@@ -295,6 +429,12 @@ export default function LiveSessionPage() {
                                         {currentEnergy !== null ? `${currentEnergy} / 10` : "—"}
                                     </span>
                                 </div>
+                                {currentTrack && (
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-white/60">BPM / Key</span>
+                                        <span className="text-white font-mono text-xs">{currentTrack.bpm} BPM · {currentTrack.key}</span>
+                                    </div>
+                                )}
                                 <div className="flex justify-between text-sm items-center pt-4">
                                     <span className="text-white/60">Current Mood</span>
                                     <div className="text-right">
@@ -339,12 +479,12 @@ export default function LiveSessionPage() {
                         </div>
                     </Card>
 
-                    {/* Now Playing */}
+                    {/* Now Playing + YouTube player */}
                     <Card className="bg-gradient-to-br from-indigo-900/40 to-purple-900/20 border-white/10 p-6 rounded-[32px]">
-                        <div className="flex items-center gap-4 mb-6">
+                        <div className="flex items-center gap-4 mb-4">
                             <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center shrink-0">
                                 {currentTrack ? (
-                                    <Music2 className="w-6 h-6 text-indigo-300" />
+                                    <Music2 className={`w-6 h-6 ${moodColor}`} />
                                 ) : (
                                     <HeartPulse className="w-6 h-6 text-white/40" />
                                 )}
@@ -356,28 +496,45 @@ export default function LiveSessionPage() {
                                 <p className="text-white/50 text-sm truncate">
                                     {currentTrack?.artist ?? (isSessionActive ? "Analyzing crowd..." : "Start a session")}
                                 </p>
+                                {currentTrack && (
+                                    <p className="text-white/30 text-xs mt-0.5">
+                                        {currentTrack.genre} · {currentTrack.bpm} BPM · {currentTrack.key}
+                                    </p>
+                                )}
                             </div>
                         </div>
 
-                        {/* Audio element is always mounted so the ref is stable */}
-                        <audio ref={audioRef} controls className="w-full rounded-xl" />
-
-                        {currentTrack && (
-                            <div className="space-y-3">
-                                {currentTrack.spotify_url && (
-                                    <a
-                                        href={currentTrack.spotify_url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="block w-full text-center text-xs font-bold uppercase tracking-widest text-white/50 hover:text-white border border-white/10 rounded-xl py-2 transition-colors"
-                                    >
-                                        Open in Spotify
-                                    </a>
-                                )}
-                                {!currentTrack.preview_url && (
-                                    <p className="text-xs text-white/30 text-center">No preview available for this track.</p>
-                                )}
+                        {/* Tone.js beat layer indicator */}
+                        {currentTrack && isSessionActive && (
+                            <div className="flex items-center gap-2 mb-3">
+                                <Zap className={`w-3 h-3 ${currentMood === "party" ? "text-pink-400" : "text-indigo-400"}`} />
+                                <span className="text-xs text-white/40 font-medium">
+                                    {currentMood === "party"
+                                        ? `Beat layer active · ${currentTrack.bpm} BPM · ${currentEnergy && currentEnergy >= 8 ? "1.25×" : "1.0×"} tempo`
+                                        : "Ambient pad layer active · Reverb 5s"}
+                                </span>
                             </div>
+                        )}
+
+                        {/* YouTube IFrame player */}
+                        <div className="rounded-2xl overflow-hidden bg-black">
+                            <div id="yt-player" />
+                        </div>
+
+                        {currentTrack?.youtube_url && (
+                            <a
+                                href={currentTrack.youtube_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block w-full text-center text-xs font-bold uppercase tracking-widest text-white/50 hover:text-white border border-white/10 rounded-xl py-2 mt-3 transition-colors"
+                            >
+                                Open in YouTube
+                            </a>
+                        )}
+                        {currentTrack && !currentTrack.youtube_id && (
+                            <p className="text-xs text-white/30 text-center mt-2">
+                                YouTube API key not set — add YOUTUBE_API_KEY to backend/.env
+                            </p>
                         )}
                     </Card>
                 </div>
