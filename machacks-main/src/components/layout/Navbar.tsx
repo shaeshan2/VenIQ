@@ -5,8 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { useAuth } from "@/contexts/auth-context";
+import { UserMenu } from "@/components/auth/user-menu";
 
 export function Navbar({ onToggleCopilot, isCopilotOpen }: { onToggleCopilot?: () => void, isCopilotOpen?: boolean }) {
+    const { user, isReady, openSignIn } = useAuth();
     return (
         <nav className="h-16 border-b border-white/10 bg-black/40 backdrop-blur-md flex items-center justify-between px-6 sticky top-0 z-50">
             <div className="flex items-center gap-8">
@@ -54,9 +57,47 @@ export function Navbar({ onToggleCopilot, isCopilotOpen }: { onToggleCopilot?: (
                     <Sparkles className="w-4 h-4" />
                 </Button>
                 <div className="h-8 w-[1px] bg-white/10 mx-1" />
-                <Button size="icon" variant="ghost" className="rounded-full w-8 h-8 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                    <User className="w-4 h-4" />
-                </Button>
+                {!isReady ? (
+                    <div className="flex items-center gap-2">
+                        <div className="h-8 w-20 animate-pulse rounded-full bg-white/10" />
+                        <div className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-white/10" />
+                    </div>
+                ) : user ? (
+                    <>
+                        <span
+                            className="hidden lg:inline max-w-[160px] truncate text-left text-xs font-semibold leading-tight text-white/90"
+                            title={user.username}
+                        >
+                            <span className="block text-[10px] font-bold uppercase tracking-widest text-indigo-400/80">
+                                Welcome
+                            </span>
+                            <span className="block truncate font-mono text-indigo-200">{user.username}</span>
+                        </span>
+                        <UserMenu />
+                    </>
+                ) : (
+                    <>
+                        <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={openSignIn}
+                            className="h-8 rounded-full border-white/15 bg-white/5 px-3 text-xs font-bold uppercase tracking-wider text-white/80 hover:bg-white/10"
+                        >
+                            Sign in
+                        </Button>
+                        <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            onClick={openSignIn}
+                            className="h-8 w-8 rounded-full border border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white"
+                            aria-label="Sign in"
+                        >
+                            <User className="h-4 w-4" />
+                        </Button>
+                    </>
+                )}
             </div>
         </nav>
     );

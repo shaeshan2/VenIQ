@@ -1,15 +1,33 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Music, Activity, Play, Sparkles, Layers, Camera, BrainCircuit, HeartPulse } from "lucide-react";
+import { Music, Activity, Sparkles, Layers, Camera, BrainCircuit, HeartPulse, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Hero from "@/components/ui/animated-shader-hero";
 import React from "react";
+import { useAuth } from "@/contexts/auth-context";
+import { toast } from "sonner";
+
+const WELCOME_DISMISS_KEY = "soundsmith_welcome_dismissed";
 
 export default function LandingPage() {
   const router = useRouter();
+  const { user, isReady, logout, openSignIn } = useAuth();
+  const [welcomeOpen, setWelcomeOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!user) {
+      setWelcomeOpen(false);
+      return;
+    }
+    if (typeof window !== "undefined" && sessionStorage.getItem(WELCOME_DISMISS_KEY) === "1") {
+      setWelcomeOpen(false);
+      return;
+    }
+    setWelcomeOpen(true);
+  }, [user]);
 
   return (
     <div className="min-h-screen bg-[#020202] text-white overflow-hidden font-sans selection:bg-indigo-500/30 selection:text-indigo-200">
@@ -26,8 +44,45 @@ export default function LandingPage() {
           <span className="hover:text-white cursor-pointer transition-colors">Use Cases</span>
           <span className="hover:text-white cursor-pointer transition-colors">Pricing</span>
         </div>
-        <div className="flex items-center gap-6">
-          <span className="hidden md:block text-sm font-bold text-white/50 hover:text-white cursor-pointer transition-colors">Sign In</span>
+        <div className="flex items-center gap-3 sm:gap-6">
+          {!isReady ? (
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-24 animate-pulse rounded-full bg-white/10" />
+              <div className="hidden h-10 w-28 animate-pulse rounded-full bg-white/10 sm:block" />
+            </div>
+          ) : user ? (
+            <>
+              <span className="hidden min-w-0 sm:block">
+                <span className="block text-[10px] font-bold uppercase tracking-widest text-indigo-400/90">
+                  Welcome
+                </span>
+                <span className="block truncate font-mono text-sm font-semibold text-white/90">
+                  {user.username}
+                </span>
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  logout();
+                  setWelcomeOpen(false);
+                  toast.message("Signed out", { description: "See you next time." });
+                }}
+                className="h-9 rounded-full px-4 text-xs font-bold uppercase tracking-widest text-white/50 hover:bg-white/10 hover:text-white"
+              >
+                Sign out
+              </Button>
+            </>
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={openSignIn}
+              className="h-9 rounded-full px-3 text-xs font-bold uppercase tracking-widest text-white/50 hover:bg-white/10 hover:text-white sm:px-4 sm:text-sm"
+            >
+              Sign in
+            </Button>
+          )}
           <Button
             onClick={() => router.push('/editor')}
             className="rounded-full bg-white text-black hover:bg-gray-100 font-black uppercase text-[10px] tracking-widest h-10 px-6 transition-all hover:scale-105 active:scale-95"
@@ -36,6 +91,42 @@ export default function LandingPage() {
           </Button>
         </div>
       </nav>
+
+      <AnimatePresence>
+        {user && welcomeOpen && isReady ? (
+          <motion.div
+            key="welcome"
+            initial={{ opacity: 0, y: -12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ type: "spring", stiffness: 380, damping: 28 }}
+            className="pointer-events-none fixed top-20 left-0 right-0 z-40 flex justify-center px-4"
+          >
+            <div className="pointer-events-auto mt-3 flex max-w-lg items-center gap-3 rounded-2xl border border-white/10 bg-black/70 py-2.5 pl-5 pr-2 shadow-[0_20px_50px_rgba(0,0,0,0.45)] shadow-indigo-500/10 backdrop-blur-xl">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500/30 to-purple-600/20 ring-1 ring-indigo-500/30">
+                <Sparkles className="h-5 w-5 text-indigo-300" />
+              </div>
+              <p className="min-w-0 flex-1 text-sm leading-snug text-white/90">
+                <span className="font-bold text-white">Welcome!</span>{" "}
+                <span className="text-white/50">You&apos;re signed in as</span>{" "}
+                <span className="font-mono text-indigo-300">{user.username}</span>
+                <span className="text-white/40"> — start a session when you&apos;re ready.</span>
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  sessionStorage.setItem(WELCOME_DISMISS_KEY, "1");
+                  setWelcomeOpen(false);
+                }}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white/35 transition-colors hover:bg-white/10 hover:text-white"
+                aria-label="Dismiss welcome message"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       <main className="flex-1 w-full flex flex-col items-center">
         <Hero
