@@ -58,15 +58,11 @@ def analyze_crowd_frame(image_base64: str) -> dict:
         return _fallback("image_base64 is empty")
 
     try:
-        import google.generativeai as genai
-
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(GEMINI_MODEL_NAME)
-
         image_bytes = base64.b64decode(image_base64, validate=True)
         if not image_bytes:
             logger.warning("Crowd analysis fallback: decoded image bytes empty")
             return _fallback("decoded image is empty")
+        logger.info("Crowd analysis start")
 
         prompt = (
             "You are analyzing a video frame from a venue or event space to help a DJ pick the right music.\n"
@@ -89,15 +85,12 @@ def analyze_crowd_frame(image_base64: str) -> dict:
             "- sentiment 'romantic': intimate, dim lighting, couples"
         )
 
-        response = model.generate_content(
-            [{"mime_type": "image/jpeg", "data": image_bytes}, prompt],
-            request_options={"timeout": GEMINI_TIMEOUT_SECONDS},
-        )
-
-        raw = getattr(response, "text", "") or ""
+        raw = _run_gemini_scene_analysis(prompt=prompt, image_bytes=image_bytes, api_key=api_key)
         parsed = _extract_json_object(raw)
         result = _normalize_scene(parsed)
 
+        logger.info("Crowd analysis success")
+        logger.info("Crowd normalization result: energy=%s sentiment=%s", result["energy"], result["sentiment"])
         result["analysis_source"] = "gemini"
         return result
 
@@ -117,6 +110,7 @@ def describe_crowd(image_b64: str) -> dict:
 
 
 def _fallback(reason: str) -> dict:
+    logger.info("Crowd fallback used: %s", reason)
     return {
         "description": "Moderately relaxed room",
         "energy": DEFAULT_ENERGY,
@@ -124,6 +118,21 @@ def _fallback(reason: str) -> dict:
         "analysis_source": "fallback",
         "fallback_reason": reason,
     }
+
+
+def _run_gemini_scene_analysis(prompt: str, image_bytes: bytes, api_key: str) -> str:
+    """
+    Isolated Gemini adapter for easier mocking in tests.
+    """
+    import google.generativeai as genai
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(GEMINI_MODEL_NAME)
+    response = model.generate_content(
+        [{"mime_type": "image/jpeg", "data": image_bytes}, prompt],
+        request_options={"timeout": GEMINI_TIMEOUT_SECONDS},
+    )
+    return getattr(response, "text", "") or ""
 
 
 def _extract_json_object(raw_text: str) -> dict[str, Any]:

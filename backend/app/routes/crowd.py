@@ -35,6 +35,7 @@ def analyze():
         { "changed": true, "energy": 8, "description": "...",
           "track": { "name": "...", "artist": "...", "uri": "...", "preview_url": "...", "spotify_url": "..." } }
     """
+    logger.info("Crowd analyze request received")
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Request body must be a JSON object"}), 400
@@ -55,6 +56,7 @@ def analyze():
             "analysis_source": "fallback",
             "fallback_reason": "route-level emergency fallback",
         }
+    logger.info("Crowd analyze scene ready: energy=%s sentiment=%s", scene.get("energy"), scene.get("sentiment"))
 
     new_energy = scene.get("energy")
     new_sentiment = scene.get("sentiment")
@@ -71,6 +73,7 @@ def analyze():
     sentiment_shifted = prev_sentiment != new_sentiment
 
     if not energy_shifted and not sentiment_shifted:
+        logger.info("Crowd analyze unchanged: changed=false")
         payload = {
             "changed": False,
             "energy": new_energy,
@@ -89,6 +92,7 @@ def analyze():
         tracks = []
 
     if not tracks:
+        logger.info("Crowd analyze changed but no Spotify track")
         payload = {
             "changed": True,
             "energy": new_energy,
@@ -105,6 +109,7 @@ def analyze():
 
     track = tracks[0]
     set_current_track(track, source="auto")
+    logger.info("Crowd analyze changed with Spotify track")
 
     payload = {
         "changed": True,

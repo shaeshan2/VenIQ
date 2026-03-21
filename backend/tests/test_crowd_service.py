@@ -1,5 +1,6 @@
 import sys
 import types
+from unittest.mock import patch
 
 from app.services.crowd import describe_crowd
 
@@ -150,3 +151,20 @@ def test_describe_crowd_truncates_long_description(monkeypatch):
 
     result = describe_crowd("dGVzdA==")
     assert len(result["description"]) <= 180
+
+
+def test_describe_crowd_uses_mockable_gemini_adapter(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake")
+    with patch("app.services.crowd._run_gemini_scene_analysis", return_value='{"description":"Room","energy":6,"sentiment":"chill"}'):
+        result = describe_crowd("dGVzdA==")
+    assert result["analysis_source"] == "gemini"
+    assert result["energy"] == 6
+    assert result["sentiment"] == "chill"
+
+
+def test_describe_crowd_falls_back_on_malformed_gemini_payload(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake")
+    with patch("app.services.crowd._run_gemini_scene_analysis", return_value="not-json"):
+        result = describe_crowd("dGVzdA==")
+    assert result["analysis_source"] == "fallback"
+    assert result["sentiment"] == "chill"
