@@ -1,16 +1,134 @@
 "use client";
 
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { Music, Activity, Sparkles, Layers, Camera, BrainCircuit, HeartPulse, X } from "lucide-react";
+import {
+  Music,
+  Activity,
+  Sparkles,
+  Layers,
+  Camera,
+  BrainCircuit,
+  HeartPulse,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Instrument_Serif } from "next/font/google";
 import Hero from "@/components/ui/animated-shader-hero";
 import React from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import {
+  FeatureAnimationGraphic,
+  type FeatureAnimationId,
+} from "@/components/landing/FeatureCardAnimations";
+
+const featureTitleFont = Instrument_Serif({
+  subsets: ["latin"],
+  weight: "400",
+  display: "swap",
+});
 
 const WELCOME_DISMISS_KEY = "soundsmith_welcome_dismissed";
+
+const LANDING_FEATURES: {
+  title: string;
+  label: string;
+  icon: LucideIcon;
+  animation: FeatureAnimationId;
+}[] = [
+  { title: "Real-time Adaptation", label: "DYNAMIC", icon: Sparkles, animation: "clock" },
+  { title: "Emotion Tracking", label: "VISION", icon: Activity, animation: "emotions" },
+  { title: "Therapeutic Layers", label: "AUDIO", icon: Layers, animation: "layers" },
+  { title: "Accessible Design", label: "ELDERLY", icon: HeartPulse, animation: "access" },
+];
+
+function FeaturesSection() {
+  const reduceMotion = useReducedMotion();
+
+  return (
+    <section className="relative z-10 w-full border-t border-white/[0.06] bg-black py-28">
+      <div
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_75%_45%_at_50%_-10%,rgba(99,102,241,0.055),transparent)]"
+        aria-hidden
+      />
+      <div className="relative mx-auto max-w-[1200px] px-6">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 lg:gap-6">
+          {LANDING_FEATURES.map((feat, i) => {
+            const Icon = feat.icon;
+            return (
+              <motion.article
+                key={feat.label}
+                initial={
+                  reduceMotion
+                    ? { opacity: 1, y: 0 }
+                    : { opacity: 0, y: 32 }
+                }
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-48px" }}
+                transition={{
+                  duration: 0.6,
+                  delay: reduceMotion ? 0 : 0.08 + i * 0.11,
+                  ease: [0.22, 1, 0.36, 1],
+                }}
+                className={cn(
+                  "group relative flex min-h-[340px] flex-col overflow-hidden rounded-[28px]",
+                  "border border-white/[0.07] bg-[#0a0a0a] p-8",
+                  "transition-[transform,border-color,box-shadow,background-color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                  "hover:-translate-y-1.5 hover:border-violet-500/25 hover:bg-[#0e0e0e]",
+                  "hover:shadow-[0_28px_56px_rgba(0,0,0,0.6),0_0_0_1px_rgba(139,92,246,0.12),0_0_48px_-8px_rgba(124,58,237,0.2)]"
+                )}
+              >
+                <div
+                  className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+                  style={{
+                    background:
+                      "linear-gradient(145deg, rgba(109,40,217,0.12) 0%, transparent 48%, rgba(124,58,237,0.08) 100%)",
+                  }}
+                  aria-hidden
+                />
+                <div className="relative flex shrink-0 items-start justify-between gap-4">
+                  <Icon
+                    className={cn(
+                      "h-6 w-6 shrink-0 stroke-[1.35] text-violet-300/60 transition-all duration-500 ease-out",
+                      "group-hover:translate-y-px group-hover:scale-110 group-hover:text-violet-200"
+                    )}
+                    strokeWidth={1.35}
+                    aria-hidden
+                  />
+                  <span className="shrink-0 rounded-full border border-violet-500/20 bg-violet-950/30 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.22em] text-violet-300/45">
+                    {feat.label}
+                  </span>
+                </div>
+                <div className="relative z-[1] my-4 min-h-[120px] w-full flex-1 overflow-hidden rounded-2xl border border-violet-500/12 bg-gradient-to-b from-violet-950/15 to-black/20">
+                  <FeatureAnimationGraphic
+                    id={feat.animation}
+                    reduceMotion={!!reduceMotion}
+                  />
+                </div>
+                <h4
+                  className={cn(
+                    featureTitleFont.className,
+                    "relative z-[1] mt-auto shrink-0 text-[1.15rem] leading-snug tracking-[-0.01em] text-white md:text-[1.35rem]"
+                  )}
+                >
+                  {feat.title}
+                </h4>
+                <span
+                  className="absolute bottom-8 left-8 h-px w-[calc(100%-4rem)] origin-left scale-x-0 bg-gradient-to-r from-white/45 via-white/20 to-transparent transition-transform duration-500 ease-out group-hover:scale-x-100"
+                  aria-hidden
+                />
+              </motion.article>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 export default function LandingPage() {
   const router = useRouter();
@@ -179,25 +297,8 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Features Section */}
-        <section className="w-full max-w-[1200px] px-6 py-24 relative z-10">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {[
-              { title: "Real-time Adaptation", label: "DYNAMIC", icon: Sparkles },
-              { title: "Emotion Tracking", label: "VISION", icon: Activity },
-              { title: "Therapeutic Layers", label: "AUDIO", icon: Layers },
-              { title: "Accessible Design", label: "ELDERLY", icon: HeartPulse }
-            ].map((feat, i) => (
-              <div key={i} className="p-8 rounded-[32px] bg-black border border-white/10 hover:border-white/20 transition-all flex flex-col justify-between min-h-[220px] group">
-                <div className="flex justify-between items-start">
-                  <feat.icon className="w-6 h-6 text-white/30 group-hover:text-white transition-colors" />
-                  <span className="text-[9px] font-black tracking-widest uppercase text-white/20 bg-white/5 px-2 py-1 rounded-sm">{feat.label}</span>
-                </div>
-                <h4 className="text-xl font-bold text-white tracking-tight">{feat.title}</h4>
-              </div>
-            ))}
-          </div>
-        </section>
+        {/* Features — dark cards, serif titles, staggered motion */}
+        <FeaturesSection />
 
         {/* Final CTA */}
         <section className="w-full py-40 flex flex-col items-center text-center border-t border-white/5 bg-[radial-gradient(circle_at_50%_50%,rgba(99,102,241,0.05),transparent)] relative z-10">
