@@ -1,0 +1,105 @@
+body {
+  margin: 0;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #0b1020;
+  color: #f0f4ff;
+}
+
+.page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.page h1 {
+  margin: 0 0 16px;
+  font-size: 2rem;
+}
+
+.page p {
+  margin: 0 0 20px;
+  color: #a7b3d1;
+}
+
+.dj-card {
+  background: #141a31;
+  border: 1px solid #253156;
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.dj-title {
+  margin: 0 0 10px;
+}
+
+.dj-subtitle {
+  margin: 0 0 14px;
+  color: #a7b3d1;
+}
+
+.track-name {
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.track-artist,
+.track-source,
+.track-crowd-sentiment,
+.track-crowd-energy,
+.track-last-updated,
+.track-status {
+  margin-top: 8px;
+}
+
+.track-last-updated {
+  color: #a7b3d1;
+  font-size: 0.95rem;
+}
+
+.track-link {
+  display: inline-block;
+  margin-top: 12px;
+  color: #86b6ff;
+}
+
+.preview-audio {
+  margin-top: 12px;
+  width: 100%;
+}
+
+.sentiment-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.sentiment-btn {
+  border: 1px solid #4867b0;
+  border-radius: 8px;
+  background: #1f2a4b;
+  color: #f0f4ff;
+  font-weight: 600;
+  padding: 10px;
+  text-transform: capitalize;
+  cursor: pointer;
+}
+
+.sentiment-btn:hover {
+  background: #2a3c6e;
+}
+
+.sentiment-btn.active {
+  background: #4f7bf7;
+}
+
+.sentiment-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.override-feedback {
+  min-height: 22px;
+  margin-top: 10px;
+  color: #a7b3d1;
+}
