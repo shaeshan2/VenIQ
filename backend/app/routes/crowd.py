@@ -41,19 +41,20 @@ _history: list[dict] = []
 
 @crowd_bp.route("/analyze", methods=["POST"])
 def analyze():
-    data = request.get_json(silent=True) or {}
+    data      = request.get_json(silent=True) or {}
     image_b64 = data.get("image_base64")
-    mode      = data.get("mode", "club")   # "club" | "study"
+    mode      = data.get("mode", "club")       # "club" | "study" | "auto"
+    mediapipe = data.get("mediapipe") or {}    # optional MediaPipe context from browser
 
     if not image_b64:
         return jsonify({"error": "image_base64 is required"}), 400
 
     if mode == "auto":
-        scene = analyze_auto(image_b64)
+        scene = analyze_auto(image_b64, mediapipe)
     elif mode == "study":
-        scene = describe_individual(image_b64)
+        scene = describe_individual(image_b64, mediapipe)
     else:
-        scene = describe_crowd(image_b64)
+        scene = describe_crowd(image_b64, mediapipe)
 
     new_energy    = scene["energy"]
     new_sentiment = scene["sentiment"]

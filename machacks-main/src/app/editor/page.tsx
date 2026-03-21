@@ -7,6 +7,12 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { analyzeFrame, clearHistory, overrideSentiment, type AnalysisEntry, type Track } from "@/lib/api";
+import {
+  initFaceLandmarker, initPoseLandmarker,
+  analyzeFaceFrame, analyzePoseFrame,
+  drawFaceMesh, drawPoseSkeleton,
+  type FaceFeatures, type PoseFeatures,
+} from "@/lib/mediapipe-analyzer";
 
 const CAPTURE_INTERVAL_MS = 7000;
 const QUEUE_PREFILL = 3;
@@ -55,10 +61,13 @@ function rampYTVolume(player: YTPlayer, from: number, to: number, ms: number) {
 export default function LiveSessionPage() {
     const videoRef       = useRef<HTMLVideoElement>(null);
     const canvasRef      = useRef<HTMLCanvasElement>(null);
+    const overlayRef     = useRef<HTMLCanvasElement>(null);  // MediaPipe overlay
+    const rafRef         = useRef<number | null>(null);      // requestAnimationFrame id
     const intervalRef    = useRef<ReturnType<typeof setInterval> | null>(null);
     const ytPlayerRef    = useRef<YTPlayer | null>(null);
     const ytReadyRef     = useRef(false);
     const pendingVideoId = useRef<string | null>(null);
+    const mpFeaturesRef  = useRef<FaceFeatures | PoseFeatures | null>(null);
 
     // "auto" = Gemini decides each frame; "club"/"study" = user locked it
     const [appMode,         setAppMode]         = useState<"auto" | "club" | "study">("auto");
@@ -74,9 +83,50 @@ export default function LiveSessionPage() {
     const [currentEnergy,     setCurrentEnergy]     = useState<number | null>(null);
     const [currentTrack,      setCurrentTrack]      = useState<Track | null>(null);
     const [coachMessage,      setCoachMessage]      = useState<string | null>(null);
+    const [mpPersonCount,     setMpPersonCount]     = useState<number | null>(null);
+    const [mpHandsRaised,     setMpHandsRaised]     = useState<number>(0);
+    const [mpReady,           setMpReady]           = useState(false);
     const [liveDescription,   setLiveDescription]   = useState("Awaiting session start...");
     const [eventLog,          setEventLog]          = useState<AnalysisEntry[]>([]);
     const [queue,             setQueue]             = useState<Track[]>([]);
+
+    // ── MediaPipe real-time loop ──────────────────────────────────────────────
+    const startMpLoop = useCallback((mode: "study" | "club") => {
+        const video   = videoRef.current;
+        const overlay = overlayRef.current;
+        if (!video || !overlay) return;
+
+        const loop = (ts: number) => {
+            if (video.readyState < 2) { rafRef.current = requestAnimationFrame(loop); return; }
+
+            // Resize overlay to match video
+            overlay.width  = video.videoWidth  || 640;
+            overlay.height = video.videoHeight || 480;
+
+            if (mode === "study") {
+                const { result, features } = analyzeFaceFrame(video, ts);
+                drawFaceMesh(overlay, result, features.suggestedEmotion);
+                mpFeaturesRef.current = features;
+                // Update live face feature state (throttled via rAF, cheap)
+            } else {
+                const { result, features } = analyzePoseFrame(video, ts);
+                drawPoseSkeleton(overlay, result, "party");
+                mpFeaturesRef.current = features;
+                setMpPersonCount(features.personCount);
+                setMpHandsRaised(features.handsRaisedCount);
+            }
+
+            rafRef.current = requestAnimationFrame(loop);
+        };
+
+        rafRef.current = requestAnimationFrame(loop);
+    }, []);
+
+    const stopMpLoop = useCallback(() => {
+        if (rafRef.current !== null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+        const overlay = overlayRef.current;
+        if (overlay) overlay.getContext("2d")?.clearRect(0, 0, overlay.width, overlay.height);
+    }, []);
 
     // ── YouTube IFrame setup ──────────────────────────────────────────────────
     useEffect(() => {
@@ -153,7 +203,10 @@ export default function LiveSessionPage() {
         setIsAnalyzing(true);
         setLiveDescription("Analyzing...");
         try {
-            const result = await analyzeFrame(frame, appMode);
+            const mpCtx = mpFeaturesRef.current
+                ? { ...(mpFeaturesRef.current as import("@/lib/api").MediaPipeContext) }
+                : undefined;
+            const result = await analyzeFrame(frame, appMode, mpCtx);
             setCurrentMood(result.sentiment ?? "Unknown");
             setCurrentConfidence(result.confidence ?? null);
             setCurrentEnergy(result.energy);
@@ -185,6 +238,14 @@ export default function LiveSessionPage() {
             setCoachMessage(null);
             setQueue([]);
             setCurrentMood("Analyzing...");
+
+            // Load MediaPipe model for current mode (non-blocking)
+            const loadMode = appMode === "study" ? "study" : "club";
+            const loader   = loadMode === "study" ? initFaceLandmarker : initPoseLandmarker;
+            loader().then(() => {
+                setMpReady(true);
+                startMpLoop(loadMode);
+            }).catch(() => { /* MediaPipe unavailable — overlay just won't show */ });
         } catch {
             alert("Could not access the camera. Please ensure permissions are granted.");
         }
@@ -203,6 +264,10 @@ export default function LiveSessionPage() {
         setOverrideLock(null);
         setCoachMessage(null);
         setDetectedMode(null);
+        setMpReady(false);
+        setMpPersonCount(null);
+        setMpHandsRaised(0);
+        stopMpLoop();
     };
 
     const forceMode = async (mode: "party" | "calm") => {
@@ -230,6 +295,19 @@ export default function LiveSessionPage() {
         if (isSessionActive && videoRef.current && stream) videoRef.current.srcObject = stream;
     }, [isSessionActive, stream]);
 
+    // Restart MediaPipe loop when effective mode changes mid-session
+    useEffect(() => {
+        if (!isSessionActive) return;
+        stopMpLoop();
+        setMpReady(false);
+        const loader = isStudy ? initFaceLandmarker : initPoseLandmarker;
+        loader().then(() => {
+            setMpReady(true);
+            startMpLoop(isStudy ? "study" : "club");
+        }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isStudy, isSessionActive]);
+
     useEffect(() => {
         if (!isSessionActive) return;
         runAnalysis();
@@ -241,8 +319,9 @@ export default function LiveSessionPage() {
         return () => {
             if (stream) stream.getTracks().forEach(t => t.stop());
             if (intervalRef.current) clearInterval(intervalRef.current);
+            stopMpLoop();
         };
-    }, [stream]);
+    }, [stream, stopMpLoop]);
 
     // ── Derived UI ────────────────────────────────────────────────────────────
     const emotionCfg   = EMOTION_CONFIG[currentMood] ?? { emoji: "🎵", color: "text-white/60", label: currentMood };
@@ -405,6 +484,10 @@ export default function LiveSessionPage() {
                         <div className="flex-1 relative bg-black/50 flex items-center justify-center pt-16">
                             <video ref={videoRef} autoPlay playsInline muted
                                 className={`w-full h-full object-cover transition-opacity duration-500 ${isSessionActive ? 'opacity-100' : 'opacity-0 absolute inset-0'}`} />
+                            {/* MediaPipe overlay — drawn in real-time via rAF */}
+                            <canvas ref={overlayRef}
+                                className="absolute inset-0 w-full h-full pointer-events-none"
+                                style={{ mixBlendMode: "screen", opacity: mpReady ? 1 : 0, transition: "opacity 0.5s" }} />
                             {!isSessionActive && (
                                 <div className="text-center text-white/20 flex flex-col items-center gap-4 relative z-10 p-12">
                                     <Camera className="w-12 h-12 mb-2 opacity-50" />
@@ -412,11 +495,21 @@ export default function LiveSessionPage() {
                                 </div>
                             )}
                             {isSessionActive && (
-                                <div className="absolute top-20 right-6">
+                                <div className="absolute top-20 right-6 flex flex-col gap-2 items-end">
                                     <div className="bg-black/60 backdrop-blur-md border border-white/10 px-4 py-2 rounded-full flex items-center gap-2">
                                         <BrainCircuit className="w-4 h-4 text-white/40" />
                                         <span className="text-xs text-white/60 font-medium">Gemini Vision</span>
                                     </div>
+                                    {mpReady && (
+                                        <div className={`bg-black/60 backdrop-blur-md border px-4 py-2 rounded-full flex items-center gap-2 ${
+                                            isStudy ? "border-blue-500/30" : "border-pink-500/30"
+                                        }`}>
+                                            <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${isStudy ? "bg-blue-400" : "bg-pink-400"}`} />
+                                            <span className={`text-xs font-medium ${isStudy ? "text-blue-300" : "text-pink-300"}`}>
+                                                {isStudy ? "Face Mesh" : `Pose · ${mpPersonCount ?? 0} person${(mpPersonCount ?? 0) !== 1 ? "s" : ""}${mpHandsRaised > 0 ? ` · ✋ ${mpHandsRaised}` : ""}`}
+                                            </span>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>

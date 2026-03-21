@@ -85,7 +85,46 @@ _CALM_SIGNALS = [
 ]
 
 
-def analyze_auto(image_b64: str) -> dict:
+def _mp_face_hint(mp: dict) -> str:
+    """Format MediaPipe face features as a natural-language hint for Gemini."""
+    if not mp:
+        return ""
+    parts = []
+    if mp.get("face_detected") is False:
+        return "MediaPipe detected no face."
+    eye = mp.get("eye_openness")
+    if eye is not None:
+        parts.append(f"eye openness {eye:.2f} ({'very low — possibly tired' if eye < 0.35 else 'normal'})")
+    smile = mp.get("smile_score")
+    if smile is not None:
+        parts.append(f"smile score {smile:.2f} ({'smiling' if smile > 0.3 else 'neutral/not smiling'})")
+    brow = mp.get("brow_furrow")
+    if brow is not None:
+        parts.append(f"brow furrow {brow:.2f} ({'furrowed — possibly stressed' if brow > 0.4 else 'relaxed'})")
+    emotion = mp.get("suggested_emotion")
+    if emotion:
+        parts.append(f"suggested emotion from landmarks: {emotion}")
+    return "MediaPipe face data: " + ", ".join(parts) + "." if parts else ""
+
+
+def _mp_pose_hint(mp: dict) -> str:
+    """Format MediaPipe pose features as a hint for Gemini."""
+    if not mp:
+        return ""
+    parts = []
+    count = mp.get("person_count")
+    if count is not None:
+        parts.append(f"{count} person(s) detected")
+    hands = mp.get("hands_raised")
+    if hands:
+        parts.append(f"{hands} hand(s) raised above shoulder level")
+    mode = mp.get("suggested_mode")
+    if mode:
+        parts.append(f"scene type suggests: {mode}")
+    return "MediaPipe pose data: " + ", ".join(parts) + "." if parts else ""
+
+
+def analyze_auto(image_b64: str, mediapipe: dict | None = None) -> dict:
     """
     Auto mode: single Gemini call that detects scene type (1 person vs group)
     and returns the appropriate analysis fields.
@@ -106,33 +145,30 @@ def analyze_auto(image_b64: str) -> dict:
         model = genai.GenerativeModel("gemini-2.5-flash")
         image_bytes = base64.b64decode(image_b64)
 
-        prompt = """Analyze this webcam frame. First decide: is this ONE person working/studying alone, or a GROUP of people?
+        mp      = mediapipe or {}
+        mp_hint = _mp_pose_hint(mp) or _mp_face_hint(mp)
+        mp_line = f"\n\nAdditional sensor data from the browser: {mp_hint}" if mp_hint else ""
+
+        prompt = (
+            "Analyze this webcam frame. First decide: is this ONE person working/studying alone, "
+            "or a GROUP of people?" + mp_line + """
 
 Return ONLY a valid JSON object. Use one of these two schemas:
 
 If ONE person alone:
-{
-  "scene_type": "study",
-  "description": "1-2 sentences describing posture, expression, body language",
-  "emotion": "focused" | "happy" | "tired" | "stressed",
-  "energy": <integer 1-10>,
-  "confidence": <float 0.0-1.0>,
-  "coach_message": "1-2 sentence motivational or calming message for them"
-}
+{"scene_type":"study","description":"1-2 sentences: posture, expression, body language",
+ "emotion":"focused|happy|tired|stressed","energy":5,"confidence":0.8,
+ "coach_message":"1-2 sentence motivational or calming message"}
 
 If a GROUP (2+ people):
-{
-  "scene_type": "club",
-  "description": "1-2 sentences describing what the group is doing, body language, energy",
-  "sentiment": "party" | "calm",
-  "energy": <integer 1-10>,
-  "confidence": <float 0.0-1.0>
-}
+{"scene_type":"club","description":"1-2 sentences: group activity, body language, energy",
+ "sentiment":"party|calm","energy":5,"confidence":0.8}
 
-Emotion guide (study): focused=working steadily, happy=smiling/positive, tired=slumped/yawning, stressed=tense/overwhelmed
-Energy guide (club): 1=very quiet/still, 10=dancing/cheering/highly energetic
+Emotion guide: focused=working steadily, happy=smiling/positive, tired=slumped/yawning, stressed=tense/overwhelmed
+Energy: 1=very still/quiet, 10=dancing/cheering/highly energetic
 
 Return only the JSON. No markdown."""
+        )
 
         response = model.generate_content(
             [{"mime_type": "image/jpeg", "data": image_bytes}, prompt]
@@ -173,7 +209,7 @@ Return only the JSON. No markdown."""
         return result
 
 
-def describe_individual(image_b64: str) -> dict:
+def describe_individual(image_b64: str, mediapipe: dict | None = None) -> dict:
     """
     Lock In mode: analyze a single person's emotional/focus state via Gemini.
 
@@ -203,29 +239,23 @@ def describe_individual(image_b64: str) -> dict:
         model = genai.GenerativeModel("gemini-2.5-flash")
         image_bytes = base64.b64decode(image_b64)
 
-        prompt = """Analyze the person in this image who appears to be studying or working.
-Return ONLY a valid JSON object with these exact fields:
-{
-  "description": "1-2 sentences: posture, facial expression, body language",
-  "emotion": "focused" | "happy" | "tired" | "stressed",
-  "energy": <integer 1-10>,
-  "confidence": <float 0.0-1.0>,
-  "coach_message": "1-2 sentences motivating or calming them based on their state"
-}
+        mp      = mediapipe or {}
+        mp_hint = _mp_face_hint(mp)
+        mp_line = f"\n\nAdditional sensor data from MediaPipe face mesh: {mp_hint}" if mp_hint else ""
 
-Emotion guide:
-- focused: working steadily, neutral or attentive expression, upright posture
-- happy: smiling, relaxed, positive expression, engaged with work
-- tired: slumped, drooping eyes, resting head, yawning, low energy
-- stressed: tense posture, furrowed brow, fidgeting, appears overwhelmed
+        prompt = (
+            "Analyze the person in this image who appears to be studying or working." + mp_line + """
 
-Coach message guide:
-- focused: affirm and encourage them to keep going
-- happy: celebrate the positive energy, keep momentum
-- tired: gentle encouragement, suggest a quick stretch or breath
-- stressed: calming, reassuring — break the task into one small step
+Return ONLY a valid JSON object:
+{"description":"1-2 sentences: posture, facial expression, body language",
+ "emotion":"focused|happy|tired|stressed","energy":5,"confidence":0.8,
+ "coach_message":"1-2 sentences motivating or calming them"}
 
-Return only the JSON. No markdown, no explanation."""
+Emotion guide: focused=working steadily upright, happy=smiling/positive, tired=slumped/drooping/yawning, stressed=tense/furrowed/fidgeting
+Coach guide: focused=affirm, happy=celebrate energy, tired=suggest stretch, stressed=calm+small step
+
+Return only the JSON. No markdown."""
+        )
 
         response = model.generate_content(
             [{"mime_type": "image/jpeg", "data": image_bytes}, prompt]
@@ -257,7 +287,7 @@ Return only the JSON. No markdown, no explanation."""
         }
 
 
-def describe_crowd(image_b64: str) -> dict:
+def describe_crowd(image_b64: str, mediapipe: dict | None = None) -> dict:
     """
     Full pipeline: webcam frame → description → sentiment + confidence.
 
@@ -269,21 +299,27 @@ def describe_crowd(image_b64: str) -> dict:
             "confidence":  0.82      # 0.0–1.0
         }
     """
-    description = _describe_scene(image_b64)
+    description = _describe_scene(image_b64, mediapipe or {})
     sentiment, confidence = _extract_sentiment(description)
     energy = _estimate_energy(description, sentiment)
+
+    # Boost energy if MediaPipe detected hands raised
+    mp = mediapipe or {}
+    if mp.get("hands_raised", 0) > 0:
+        energy = min(10, energy + 1)
 
     return {
         "description": description,
         "energy": energy,
         "sentiment": sentiment,
         "confidence": confidence,
+        "coach_message": None,
     }
 
 
 # ── Stage 1: Gemini Vision ────────────────────────────────────────────────────
 
-def _describe_scene(image_b64: str) -> str:
+def _describe_scene(image_b64: str, mediapipe: dict | None = None) -> str:
     """
     Ask Gemini to describe what the people in the frame are doing.
     Returns plain text — no sentiment classification here.
@@ -300,12 +336,16 @@ def _describe_scene(image_b64: str) -> str:
 
         image_bytes = base64.b64decode(image_b64)
 
+        mp      = mediapipe or {}
+        mp_hint = _mp_pose_hint(mp)
+        mp_line = f" Additional sensor data: {mp_hint}" if mp_hint else ""
+
         prompt = (
             "Describe what the people in this image are doing in 1-2 sentences. "
             "Focus on their body language, movement, and energy level. "
             "Be specific: are they sitting or standing? Are any hands raised? "
             "Are people talking, laughing, cheering, or quietly working? "
-            "Reply with plain text only — no JSON, no labels."
+            "Reply with plain text only — no JSON, no labels." + mp_line
         )
 
         response = model.generate_content(
