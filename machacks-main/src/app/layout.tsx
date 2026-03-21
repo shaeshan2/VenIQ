@@ -19,8 +19,8 @@ const fontMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SoundSmith | AI Music Workspace",
-  description: "Pitch-perfect AI music creation and editing.",
+  title: "VenIQ",
+  description: "Crowd-aware AI DJ that reads the room and adapts the music.",
 };
 
 export default function RootLayout({

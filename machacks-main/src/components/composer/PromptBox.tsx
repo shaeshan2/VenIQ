@@ -51,7 +51,7 @@ export function PromptBox() {
                 <Textarea
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
-                    placeholder={`Instruct SoundSmith to ${mode}...`}
+                    placeholder={`Instruct VenIQ to ${mode}...`}
                     className="w-full bg-transparent border-none text-2xl md:text-3xl font-medium placeholder:text-white/10 focus-visible:ring-0 min-h-[140px] resize-none pl-12 py-1 scrollbar-hide text-white leading-tight"
                 />
 

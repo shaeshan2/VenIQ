@@ -16,9 +16,9 @@ export function Navbar({ onToggleCopilot, isCopilotOpen }: { onToggleCopilot?: (
             <div className="flex items-center gap-8">
                 <Link href="/" className="flex items-center gap-2 group cursor-pointer">
                     <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-indigo-500/20 group-hover:scale-110 transition-transform">
-                        <span className="text-white font-bold text-xl uppercase tracking-tighter">S</span>
+                        <span className="text-white font-bold text-xl uppercase tracking-tighter">V</span>
                     </div>
-                    <span className="font-bold text-xl bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60 tracking-tight">SoundSmith</span>
+                    <span className="font-bold text-xl bg-clip-text text-transparent bg-gradient-to-r from-violet-300 via-fuchsia-300 to-pink-300 tracking-tight">Ven<span className="text-white">IQ</span></span>
                 </Link>
 
                 <div className="hidden md:flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-3 py-1 text-sm text-white/60 hover:bg-white/10 transition-colors cursor-pointer group">
