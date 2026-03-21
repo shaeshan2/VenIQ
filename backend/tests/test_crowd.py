@@ -29,6 +29,11 @@ def test_analyze_requires_image(client):
     assert res.status_code == 400
 
 
+def test_analyze_requires_json_object(client):
+    res = client.post("/api/crowd/analyze", data="[]", content_type="application/json")
+    assert res.status_code == 400
+
+
 def test_analyze_rejects_non_string_image_base64(client):
     res = client.post("/api/crowd/analyze", json={"image_base64": 123})
     assert res.status_code == 400
@@ -42,7 +47,7 @@ def test_first_call_always_returns_changed(client):
     data = res.get_json()
     assert data["changed"] is True
     assert data["track"]["name"] == "Test Song"
-    assert data["analysis_source"] == "gemini"
+    assert data["music_source"] == "spotify"
 
 
 def test_stable_crowd_returns_no_change(client):
@@ -55,8 +60,9 @@ def test_stable_crowd_returns_no_change(client):
     assert res.status_code == 200
     data = res.get_json()
     assert data["changed"] is False
-    assert data["sentiment"] == "party"
-    assert data["analysis_source"] == "gemini"
+    assert data["energy"] == 8
+    assert data["description"] == "Crowded dance floor."
+    assert "sentiment" not in data
 
 
 def test_energy_shift_above_threshold_returns_changed(client):
@@ -85,7 +91,7 @@ def test_sentiment_change_alone_triggers_recommendation(client):
 
 def test_fallback_scene_fields_are_propagated(client):
     fallback_scene = {
-        "description": "Scene appears relaxed with moderate-low activity.",
+        "description": "Moderately relaxed room",
         "energy": 4,
         "sentiment": "chill",
         "analysis_source": "fallback",
@@ -97,3 +103,13 @@ def test_fallback_scene_fields_are_propagated(client):
     data = res.get_json()
     assert data["analysis_source"] == "fallback"
     assert data["fallback_reason"] == "Gemini timeout"
+
+
+def test_route_uses_emergency_fallback_when_service_raises(client):
+    with patch("app.routes.crowd.describe_crowd", side_effect=RuntimeError("boom")), \
+         patch("app.routes.crowd.get_recommendations", return_value=[]):
+        res = client.post("/api/crowd/analyze", json={"image_base64": "dGVzdA=="})
+    data = res.get_json()
+    assert res.status_code == 200
+    assert data["sentiment"] == "chill"
+    assert data["analysis_source"] == "fallback"

@@ -10,11 +10,13 @@ POST /api/crowd/analyze
 """
 
 from flask import Blueprint, request, jsonify, current_app
+import logging
 from app.services.crowd import describe_crowd
 from app.services.spotify import get_recommendations
 from app.routes.playback import set_current_track
 
 crowd_bp = Blueprint("crowd", __name__)
+logger = logging.getLogger(__name__)
 
 # Persists between requests — tracks previous scene state
 _state: dict = {"energy": None, "sentiment": None}
@@ -33,17 +35,31 @@ def analyze():
         { "changed": true, "energy": 8, "description": "...",
           "track": { "name": "...", "artist": "...", "uri": "...", "preview_url": "...", "spotify_url": "..." } }
     """
-    data = request.get_json(silent=True) or {}
-    image_b64 = data.get("image_base64")
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Request body must be a JSON object"}), 400
 
-    if not image_b64 or not isinstance(image_b64, str):
+    image_b64 = data.get("image_base64")
+    if not isinstance(image_b64, str) or not image_b64.strip():
         return jsonify({"error": "image_base64 is required"}), 400
 
-    scene = describe_crowd(image_b64)
-    new_energy = scene["energy"]
-    new_sentiment = scene["sentiment"]
-    description = scene["description"]
-    analysis_source = scene.get("analysis_source", "gemini")
+    try:
+        scene = describe_crowd(image_b64.strip())
+    except Exception:
+        # Guardrail: service should usually return fallback instead of raising.
+        logger.exception("Crowd route: describe_crowd raised unexpectedly")
+        scene = {
+            "description": "Moderately relaxed room",
+            "energy": 4,
+            "sentiment": "chill",
+            "analysis_source": "fallback",
+            "fallback_reason": "route-level emergency fallback",
+        }
+
+    new_energy = scene.get("energy")
+    new_sentiment = scene.get("sentiment")
+    description = scene.get("description")
+    analysis_source = scene.get("analysis_source", "fallback")
     fallback_reason = scene.get("fallback_reason")
     threshold = current_app.config.get("ENERGY_CHANGE_THRESHOLD", 2)
 
@@ -59,18 +75,19 @@ def analyze():
             "changed": False,
             "energy": new_energy,
             "description": description,
-            "sentiment": new_sentiment,
-            "analysis_source": analysis_source,
         }
-        if fallback_reason:
-            payload["fallback_reason"] = fallback_reason
         return jsonify(payload)
 
     # Update state
     _state["energy"] = new_energy
     _state["sentiment"] = new_sentiment
 
-    tracks = get_recommendations(new_sentiment, limit=5)
+    try:
+        tracks = get_recommendations(new_sentiment, limit=5)
+    except Exception:
+        logger.exception("Crowd route: Spotify recommendations failed")
+        tracks = []
+
     if not tracks:
         payload = {
             "changed": True,
@@ -78,9 +95,10 @@ def analyze():
             "description": description,
             "sentiment": new_sentiment,
             "track": None,
-            "error": "Spotify returned no tracks",
-            "analysis_source": analysis_source,
+            "music_source": "none",
         }
+        if analysis_source == "fallback":
+            payload["analysis_source"] = analysis_source
         if fallback_reason:
             payload["fallback_reason"] = fallback_reason
         return jsonify(payload)
@@ -94,8 +112,10 @@ def analyze():
         "description": description,
         "sentiment": new_sentiment,
         "track": track,
-        "analysis_source": analysis_source,
+        "music_source": "spotify",
     }
+    if analysis_source == "fallback":
+        payload["analysis_source"] = analysis_source
     if fallback_reason:
         payload["fallback_reason"] = fallback_reason
     return jsonify(payload)
