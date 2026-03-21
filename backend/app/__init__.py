@@ -9,10 +9,12 @@ def create_app():
 
     CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-    from app.routes.mood import mood_bp
+    from app.routes.analyze import analyze_bp
+    from app.routes.ingest import ingest_bp
     from app.routes.music import music_bp
 
-    app.register_blueprint(mood_bp, url_prefix="/api/mood")
-    app.register_blueprint(music_bp, url_prefix="/api/music")
+    app.register_blueprint(analyze_bp, url_prefix="/api/analyze")
+    app.register_blueprint(ingest_bp, url_prefix="/api/ingest")
+    app.register_blueprint(music_bp, url_prefix="/api")
 
     return app

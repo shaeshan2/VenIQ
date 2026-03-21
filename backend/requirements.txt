@@ -2,15 +2,15 @@ flask==3.0.3
 flask-cors==4.0.1
 python-dotenv==1.0.1
 
-# Mood detection
+# AI — mood + age detection
 google-generativeai==0.7.2
-deepface==0.0.93         # optional: local facial emotion recognition
-opencv-python==4.10.0.84 # optional: webcam/image processing
-transformers==4.41.2     # optional: text sentiment fallback (distilbert)
+
+# Audio ingestion
+yt-dlp==2024.5.27          # YouTube audio download (requires ffmpeg on PATH)
+pydub==0.25.1              # MP3/WAV conversion (requires ffmpeg on PATH)
 
 # Music transformation
 librosa==0.10.2
-pydub==0.25.1
 soundfile==0.12.1
 numpy==1.26.4
 

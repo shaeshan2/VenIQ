@@ -2,60 +2,80 @@ import os
 import uuid
 from flask import Blueprint, request, jsonify, send_file, current_app
 from app.services.music_transform import transform_music
+from app.services.ingest import INGESTED_DIR
 
 music_bp = Blueprint("music", __name__)
 
-# In-memory session store (sufficient for hackathon scale)
-_sessions: dict[str, str] = {}
+# In-memory session map: session_id → output mp3 path
+_sessions: dict[str, dict] = {}
+
+OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "audio", "output")
 
 
 @music_bp.route("/transform", methods=["POST"])
 def transform():
     """
-    Transform a base track according to the given mood.
+    Transform one or more ingested tracks using mood + age profile.
 
     Body (JSON):
-        mood (str): one of "happy" | "sad" | "anxious" | "calm"
-        track_id (str, optional): filename stem in audio/base_tracks/ (default: "default")
+        track_ids   (list[str]): one or more track_ids from /api/ingest
+        mood        (str):       "happy" | "sad" | "anxious" | "calm"
+        age_bracket (str):       "young" | "middle" | "senior"
 
     Returns:
-        { "session_id": "<uuid>", "audio_url": "/api/music/stream/<uuid>" }
+        { "playlist": [{ "session_id": "...", "audio_url": "...", "title": "..." }] }
     """
     data = request.get_json(silent=True) or {}
-    mood = data.get("mood", current_app.config["DEFAULT_MOOD"])
-    track_id = data.get("track_id", "default")
+    track_ids = data.get("track_ids", [])
+    mood = data.get("mood", "calm")
+    age_bracket = data.get("age_bracket", "middle")
 
-    base_dir = current_app.config["AUDIO_BASE_TRACKS_DIR"]
-    output_dir = current_app.config["AUDIO_OUTPUT_DIR"]
-    fallback = current_app.config["FALLBACK_TRACK"]
+    if not track_ids:
+        return jsonify({"error": "track_ids list is required"}), 400
 
-    # Locate base track
-    base_track = os.path.join(base_dir, f"{track_id}.mp3")
-    if not os.path.exists(base_track):
-        base_track = fallback
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    playlist = []
 
-    os.makedirs(output_dir, exist_ok=True)
-    session_id = str(uuid.uuid4())
-    output_path = os.path.join(output_dir, f"{session_id}.mp3")
+    for track_id in track_ids:
+        wav_path = os.path.join(INGESTED_DIR, f"{track_id}.wav")
+        session_id = str(uuid.uuid4())
+        output_path = os.path.join(OUTPUT_DIR, f"{session_id}.mp3")
 
-    try:
-        transform_music(base_track, mood, output_path)
-    except Exception:
-        output_path = fallback
+        # Attempt transformation; fall back to original if it fails
+        try:
+            transform_music(wav_path, mood, age_bracket, output_path)
+            audio_path = output_path
+        except Exception:
+            # Serve original as MP3 using pydub
+            try:
+                from pydub import AudioSegment
+                AudioSegment.from_wav(wav_path).export(output_path, format="mp3")
+                audio_path = output_path
+            except Exception:
+                audio_path = None
 
-    _sessions[session_id] = output_path
+        title = _sessions.get(track_id, {}).get("title", track_id)
+        _sessions[session_id] = {"path": audio_path, "title": title}
 
-    return jsonify({"session_id": session_id, "audio_url": f"/api/music/stream/{session_id}"})
+        playlist.append({
+            "session_id": session_id,
+            "audio_url": f"/api/stream/{session_id}",
+            "title": title,
+        })
+
+    return jsonify({"playlist": playlist})
 
 
 @music_bp.route("/stream/<session_id>", methods=["GET"])
 def stream(session_id: str):
-    """Stream the transformed audio file for a given session."""
-    path = _sessions.get(session_id)
+    """Stream a transformed audio file."""
+    entry = _sessions.get(session_id)
+    path = entry.get("path") if entry else None
+
     if not path or not os.path.exists(path):
-        fallback = current_app.config["FALLBACK_TRACK"]
-        if not os.path.exists(fallback):
-            return jsonify({"error": "Audio not found"}), 404
-        path = fallback
+        fallback = current_app.config.get("FALLBACK_TRACK", "")
+        if fallback and os.path.exists(fallback):
+            return send_file(fallback, mimetype="audio/mpeg", conditional=True)
+        return jsonify({"error": "Audio not found"}), 404
 
     return send_file(path, mimetype="audio/mpeg", conditional=True)
