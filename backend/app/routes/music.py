@@ -1,8 +1,8 @@
 import os
 import uuid
 from flask import Blueprint, request, jsonify, send_file, current_app
-from app.services.music_transform import transform_music
-from app.services.ingest import INGESTED_DIR
+from app.services.music_transform import transform_music, wav_to_mp3
+from app.services.ingest import INGESTED_DIR, get_track_title
 
 music_bp = Blueprint("music", __name__)
 
@@ -41,20 +41,20 @@ def transform():
         session_id = str(uuid.uuid4())
         output_path = os.path.join(OUTPUT_DIR, f"{session_id}.mp3")
 
-        # Attempt transformation; fall back to original if it fails
         try:
             transform_music(wav_path, mood, age_bracket, output_path)
             audio_path = output_path
         except Exception:
-            # Serve original as MP3 using pydub
+            # Fall back: serve original WAV converted to MP3 unmodified
             try:
-                from pydub import AudioSegment
-                AudioSegment.from_wav(wav_path).export(output_path, format="mp3")
+                import librosa
+                y, sr = librosa.load(wav_path, sr=None, mono=True)
+                wav_to_mp3(y, sr, output_path)
                 audio_path = output_path
             except Exception:
                 audio_path = None
 
-        title = _sessions.get(track_id, {}).get("title", track_id)
+        title = get_track_title(track_id)
         _sessions[session_id] = {"path": audio_path, "title": title}
 
         playlist.append({

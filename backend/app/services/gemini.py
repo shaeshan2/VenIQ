@@ -14,11 +14,12 @@ import base64
 import json
 import os
 from typing import Optional
+from config import Config
 
 VALID_MOODS = {"happy", "sad", "anxious", "calm"}
 VALID_AGE_BRACKETS = {"young", "middle", "senior"}
-DEFAULT_MOOD = "calm"
-DEFAULT_AGE_BRACKET = "middle"
+DEFAULT_MOOD = Config.DEFAULT_MOOD
+DEFAULT_AGE_BRACKET = Config.DEFAULT_AGE_BRACKET
 
 
 def analyze_frame(
@@ -68,7 +69,6 @@ def analyze_frame(
             [{"mime_type": "image/jpeg", "data": image_bytes}, prompt]
         )
 
-        # Image bytes go out of scope here — never persisted
         raw = response.text.strip().strip("```json").strip("```").strip()
         result = json.loads(raw)
 

@@ -23,10 +23,12 @@ Output: MP3 written to output_path
 """
 
 import os
+import tempfile
 import numpy as np
 import librosa
 import soundfile as sf
 from pydub import AudioSegment
+from scipy.signal import lfilter
 
 # (tempo_factor, pitch_steps, low_pass_hz or None)
 _MATRIX: dict[tuple[str, str], tuple[float, int, int | None]] = {
@@ -94,22 +96,26 @@ def transform_music(
     if peak > 0:
         y = y / peak * 0.9
 
-    tmp_wav = output_path.replace(".mp3", "_tmp.wav")
-    sf.write(tmp_wav, y, sr)
+    wav_to_mp3(y, sr, output_path)
 
-    AudioSegment.from_wav(tmp_wav).export(output_path, format="mp3", bitrate="192k")
-    os.remove(tmp_wav)
+
+def wav_to_mp3(y: np.ndarray, sr: int, output_path: str, bitrate: str = "192k") -> None:
+    """Write a numpy audio array to an MP3 file via a temporary WAV."""
+    tmp = tempfile.mktemp(suffix=".wav")
+    try:
+        sf.write(tmp, y, sr)
+        AudioSegment.from_wav(tmp).export(output_path, format="mp3", bitrate=bitrate)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
 
 
 def _low_pass(y: np.ndarray, sr: int, cutoff_hz: int) -> np.ndarray:
     """Single-pole IIR low-pass — adds perceived warmth."""
     rc = 1.0 / (2 * np.pi * cutoff_hz)
     alpha = (1.0 / sr) / (rc + 1.0 / sr)
-    out = np.zeros_like(y)
-    out[0] = y[0]
-    for i in range(1, len(y)):
-        out[i] = out[i - 1] + alpha * (y[i] - out[i - 1])
-    return out
+    # Vectorized via scipy lfilter: y[n] = alpha*x[n] + (1-alpha)*y[n-1]
+    return lfilter([alpha], [1.0, -(1.0 - alpha)], y).astype(y.dtype)
 
 
 def _apply_flow_envelope(y: np.ndarray, sr: int, mood: str) -> np.ndarray:

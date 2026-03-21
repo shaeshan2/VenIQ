@@ -16,6 +16,15 @@ from pathlib import Path
 
 INGESTED_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "audio", "ingested")
 
+# Track registry: maps track_id → title so music route can look up titles
+_track_registry: dict[str, str] = {}
+
+os.makedirs(INGESTED_DIR, exist_ok=True)
+
+
+def get_track_title(track_id: str) -> str:
+    return _track_registry.get(track_id, track_id)
+
 
 def ingest_youtube(youtube_url: str) -> dict:
     """
@@ -27,7 +36,6 @@ def ingest_youtube(youtube_url: str) -> dict:
     Returns:
         { "track_id": str, "title": str, "duration_s": int, "wav_path": str }
     """
-    os.makedirs(INGESTED_DIR, exist_ok=True)
     track_id = str(uuid.uuid4())
     output_template = os.path.join(INGESTED_DIR, f"{track_id}.%(ext)s")
 
@@ -56,6 +64,7 @@ def ingest_youtube(youtube_url: str) -> dict:
     title = result.stdout.strip().split("\n")[0] or "Unknown Title"
     duration_s = _get_duration(wav_path)
 
+    _track_registry[track_id] = title
     return {"track_id": track_id, "title": title, "duration_s": duration_s, "wav_path": wav_path}
 
 
@@ -69,18 +78,18 @@ def ingest_mp3(mp3_path: str) -> dict:
     Returns:
         { "track_id": str, "title": str, "duration_s": int, "wav_path": str }
     """
-    os.makedirs(INGESTED_DIR, exist_ok=True)
+    from pydub import AudioSegment
+
     track_id = str(uuid.uuid4())
     wav_path = os.path.join(INGESTED_DIR, f"{track_id}.wav")
 
-    # Use pydub (wraps ffmpeg) to convert
-    from pydub import AudioSegment
     audio = AudioSegment.from_mp3(mp3_path)
     audio.export(wav_path, format="wav")
 
     title = Path(mp3_path).stem
-    duration_s = int(len(audio) / 1000)
+    duration_s = _get_duration(wav_path)
 
+    _track_registry[track_id] = title
     return {"track_id": track_id, "title": title, "duration_s": duration_s, "wav_path": wav_path}
 
 
