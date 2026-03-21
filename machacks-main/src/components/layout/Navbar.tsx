@@ -7,9 +7,10 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useAuth } from "@/contexts/auth-context";
 import { UserMenu } from "@/components/auth/user-menu";
+import { LoginHoverDropdown } from "@/components/auth/login-hover-dropdown";
 
 export function Navbar({ onToggleCopilot, isCopilotOpen }: { onToggleCopilot?: () => void, isCopilotOpen?: boolean }) {
-    const { user, isReady, openSignIn } = useAuth();
+    const { user, isReady, openAuthModal } = useAuth();
     return (
         <nav className="h-16 border-b border-white/10 bg-black/40 backdrop-blur-md flex items-center justify-between px-6 sticky top-0 z-50">
             <div className="flex items-center gap-8">
@@ -77,22 +78,16 @@ export function Navbar({ onToggleCopilot, isCopilotOpen }: { onToggleCopilot?: (
                     </>
                 ) : (
                     <>
-                        <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={openSignIn}
-                            className="h-8 rounded-full border-white/15 bg-white/5 px-3 text-xs font-bold uppercase tracking-wider text-white/80 hover:bg-white/10"
-                        >
-                            Sign in
-                        </Button>
+                        <LoginHoverDropdown
+                            triggerClassName="h-8 border border-white/15 bg-white/5 px-3 text-[10px] text-white/80 hover:bg-white/10 sm:text-xs"
+                        />
                         <Button
                             type="button"
                             size="icon"
                             variant="ghost"
-                            onClick={openSignIn}
+                            onClick={() => openAuthModal("login")}
                             className="h-8 w-8 rounded-full border border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white"
-                            aria-label="Sign in"
+                            aria-label="Log in with demo account"
                         >
                             <User className="h-4 w-4" />
                         </Button>

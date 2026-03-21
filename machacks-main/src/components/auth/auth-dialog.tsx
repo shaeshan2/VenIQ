@@ -3,7 +3,7 @@
 import { useEffect, useId, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
-import { KeyRound, Sparkles, Eye, EyeOff, LogIn } from "lucide-react";
+import { KeyRound, Sparkles, Eye, EyeOff, LogIn, UserPlus } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -18,25 +18,31 @@ import {
   DEMO_PASSWORD,
   DEMO_USERNAME,
   useAuth,
+  type AuthMode,
 } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
 
 type Props = {
   open: boolean;
+  mode: AuthMode;
   onOpenChange: (open: boolean) => void;
 };
 
-export function SignInDialog({ open, onOpenChange }: Props) {
-  const { login } = useAuth();
+export function AuthDialog({ open, mode, onOpenChange }: Props) {
+  const { login, signUp, setAuthModal } = useAuth();
   const formId = useId();
   const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
+  const isLogin = mode === "login";
+
   function resetForm() {
     setUsername("");
+    setEmail("");
     setPassword("");
     setError(null);
     setPending(false);
@@ -50,35 +56,64 @@ export function SignInDialog({ open, onOpenChange }: Props) {
 
   useEffect(() => {
     if (!open) return;
-    const id = `${formId}-user`;
+    setUsername("");
+    setEmail("");
+    setPassword("");
+    setError(null);
+    setPending(false);
+    setShowPassword(false);
+    const firstId = mode === "login" ? `${formId}-user` : `${formId}-email`;
     const t = requestAnimationFrame(() => {
-      (document.getElementById(id) as HTMLInputElement | null)?.focus();
+      (document.getElementById(firstId) as HTMLInputElement | null)?.focus();
     });
     return () => cancelAnimationFrame(t);
-  }, [open, formId]);
+  }, [open, mode, formId]);
 
   function fillDemo() {
     setUsername(DEMO_USERNAME);
     setPassword(DEMO_PASSWORD);
     setError(null);
     toast.message("Demo credentials filled", {
-      description: "Tap Sign in to continue.",
+      description: "Tap Log in to continue.",
     });
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!username.trim() || !password) {
-      setError("Enter username and password.");
+
+    if (isLogin) {
+      if (!username.trim() || !password) {
+        setError("Enter username and password.");
+        return;
+      }
+      setPending(true);
+      window.setTimeout(() => {
+        const result = login(username, password);
+        setPending(false);
+        if (result.ok) {
+          toast.success("Welcome!", {
+            description: `Signed in as ${result.username}.`,
+          });
+          resetForm();
+          onOpenChange(false);
+        } else {
+          setError(result.error);
+        }
+      }, 160);
+      return;
+    }
+
+    if (!email.trim() || !password) {
+      setError("Enter email and password.");
       return;
     }
     setPending(true);
     window.setTimeout(() => {
-      const result = login(username, password);
+      const result = signUp(email, password);
       setPending(false);
       if (result.ok) {
-        toast.success("Welcome!", {
+        toast.success("Account ready!", {
           description: `Signed in as ${result.username}.`,
         });
         resetForm();
@@ -89,7 +124,9 @@ export function SignInDialog({ open, onOpenChange }: Props) {
     }, 160);
   }
 
-  const canSubmit = username.trim().length > 0 && password.length > 0 && !pending;
+  const canSubmit = isLogin
+    ? username.trim().length > 0 && password.length > 0 && !pending
+    : email.trim().length > 0 && password.length > 0 && !pending;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -122,11 +159,12 @@ export function SignInDialog({ open, onOpenChange }: Props) {
                   </span>
                 </div>
                 <DialogTitle className="text-2xl font-black tracking-tight text-white">
-                  Sign in
+                  {isLogin ? "Log in" : "Sign up"}
                 </DialogTitle>
                 <DialogDescription className="text-sm leading-relaxed text-white/45">
-                  Use the demo account to try the workspace. Sessions stay on this
-                  browser only.
+                  {isLogin
+                    ? "Use the demo account to try the workspace. Sessions stay on this browser only."
+                    : "Create a demo account — no verification. Anything you enter works for this build."}
                 </DialogDescription>
               </div>
             </div>
@@ -137,26 +175,50 @@ export function SignInDialog({ open, onOpenChange }: Props) {
             onSubmit={handleSubmit}
             className="relative mt-8 space-y-5"
           >
-            <div className="space-y-2">
-              <Label
-                htmlFor={`${formId}-user`}
-                className="text-xs font-bold uppercase tracking-widest text-white/50"
-              >
-                Username
-              </Label>
-              <Input
-                id={`${formId}-user`}
-                name="username"
-                autoComplete="username"
-                value={username}
-                onChange={(e) => {
-                  setUsername(e.target.value);
-                  setError(null);
-                }}
-                placeholder={DEMO_USERNAME}
-                className="h-11 rounded-xl border-white/10 bg-white/[0.06] text-white placeholder:text-white/25 focus-visible:border-indigo-500/40 focus-visible:ring-2 focus-visible:ring-indigo-500/20"
-              />
-            </div>
+            {isLogin ? (
+              <div className="space-y-2">
+                <Label
+                  htmlFor={`${formId}-user`}
+                  className="text-xs font-bold uppercase tracking-widest text-white/50"
+                >
+                  Username
+                </Label>
+                <Input
+                  id={`${formId}-user`}
+                  name="username"
+                  autoComplete="username"
+                  value={username}
+                  onChange={(e) => {
+                    setUsername(e.target.value);
+                    setError(null);
+                  }}
+                  placeholder={DEMO_USERNAME}
+                  className="h-11 rounded-xl border-white/10 bg-white/[0.06] text-white placeholder:text-white/25 focus-visible:border-indigo-500/40 focus-visible:ring-2 focus-visible:ring-indigo-500/20"
+                />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label
+                  htmlFor={`${formId}-email`}
+                  className="text-xs font-bold uppercase tracking-widest text-white/50"
+                >
+                  Email
+                </Label>
+                <Input
+                  id={`${formId}-email`}
+                  name="email"
+                  type="text"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setError(null);
+                  }}
+                  placeholder="you@example.com"
+                  className="h-11 rounded-xl border-white/10 bg-white/[0.06] text-white placeholder:text-white/25 focus-visible:border-indigo-500/40 focus-visible:ring-2 focus-visible:ring-indigo-500/20"
+                />
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label
@@ -170,7 +232,7 @@ export function SignInDialog({ open, onOpenChange }: Props) {
                   id={`${formId}-pass`}
                   name="password"
                   type={showPassword ? "text" : "password"}
-                  autoComplete="current-password"
+                  autoComplete={isLogin ? "current-password" : "new-password"}
                   value={password}
                   onChange={(e) => {
                     setPassword(e.target.value);
@@ -194,29 +256,31 @@ export function SignInDialog({ open, onOpenChange }: Props) {
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 rounded-2xl border border-indigo-500/20 bg-indigo-500/[0.08] p-4">
-              <div className="flex items-center gap-2 text-indigo-200/90">
-                <KeyRound className="h-4 w-4 shrink-0 text-indigo-400" />
-                <p className="text-xs leading-relaxed">
-                  <span className="font-semibold text-white/90">Demo login:</span>{" "}
-                  <code className="rounded bg-black/40 px-1.5 py-0.5 font-mono text-[11px] text-white/90">
-                    {DEMO_USERNAME}
-                  </code>{" "}
-                  ·{" "}
-                  <code className="rounded bg-black/40 px-1.5 py-0.5 font-mono text-[11px] text-white/90">
-                    {DEMO_PASSWORD}
-                  </code>
-                </p>
+            {isLogin ? (
+              <div className="flex flex-col gap-3 rounded-2xl border border-indigo-500/20 bg-indigo-500/[0.08] p-4">
+                <div className="flex items-center gap-2 text-indigo-200/90">
+                  <KeyRound className="h-4 w-4 shrink-0 text-indigo-400" />
+                  <p className="text-xs leading-relaxed">
+                    <span className="font-semibold text-white/90">Demo login:</span>{" "}
+                    <code className="rounded bg-black/40 px-1.5 py-0.5 font-mono text-[11px] text-white/90">
+                      {DEMO_USERNAME}
+                    </code>{" "}
+                    ·{" "}
+                    <code className="rounded bg-black/40 px-1.5 py-0.5 font-mono text-[11px] text-white/90">
+                      {DEMO_PASSWORD}
+                    </code>
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={fillDemo}
+                  className="h-9 w-full rounded-full border-indigo-500/30 bg-indigo-500/10 text-xs font-bold uppercase tracking-widest text-indigo-200 hover:bg-indigo-500/20 hover:text-white"
+                >
+                  Fill demo credentials
+                </Button>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={fillDemo}
-                className="h-9 w-full rounded-full border-indigo-500/30 bg-indigo-500/10 text-xs font-bold uppercase tracking-widest text-indigo-200 hover:bg-indigo-500/20 hover:text-white"
-              >
-                Fill demo credentials
-              </Button>
-            </div>
+            ) : null}
 
             <AnimatePresence mode="wait">
               {error ? (
@@ -241,15 +305,46 @@ export function SignInDialog({ open, onOpenChange }: Props) {
               {pending ? (
                 <span className="inline-flex items-center gap-2">
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/20 border-t-black" />
-                  Signing in…
+                  {isLogin ? "Logging in…" : "Creating…"}
+                </span>
+              ) : isLogin ? (
+                <span className="inline-flex items-center gap-2">
+                  <LogIn className="h-4 w-4" />
+                  Log in
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-2">
-                  <LogIn className="h-4 w-4" />
-                  Sign in
+                  <UserPlus className="h-4 w-4" />
+                  Sign up
                 </span>
               )}
             </Button>
+
+            <p className="text-center text-[11px] text-white/35">
+              {isLogin ? (
+                <>
+                  Need a throwaway account?{" "}
+                  <button
+                    type="button"
+                    className="font-semibold text-indigo-400/90 underline-offset-2 hover:text-indigo-300 hover:underline"
+                    onClick={() => setAuthModal({ open: true, mode: "signup" })}
+                  >
+                    Sign up
+                  </button>
+                </>
+              ) : (
+                <>
+                  Have the demo account?{" "}
+                  <button
+                    type="button"
+                    className="font-semibold text-indigo-400/90 underline-offset-2 hover:text-indigo-300 hover:underline"
+                    onClick={() => setAuthModal({ open: true, mode: "login" })}
+                  >
+                    Log in
+                  </button>
+                </>
+              )}
+            </p>
           </form>
         </div>
       </DialogContent>

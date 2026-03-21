@@ -2,14 +2,20 @@
 
 import type { ReactNode } from "react";
 import { AuthProvider, useAuth } from "@/contexts/auth-context";
-import { SignInDialog } from "@/components/auth/sign-in-dialog";
+import { AuthDialog } from "@/components/auth/auth-dialog";
 
 function AuthChrome({ children }: { children: ReactNode }) {
-  const { signInOpen, setSignInOpen } = useAuth();
+  const { authModal, setAuthModal } = useAuth();
   return (
     <>
       {children}
-      <SignInDialog open={signInOpen} onOpenChange={setSignInOpen} />
+      <AuthDialog
+        open={authModal.open}
+        mode={authModal.mode}
+        onOpenChange={(open) =>
+          setAuthModal((m) => ({ ...m, open }))
+        }
+      />
     </>
   );
 }

@@ -19,6 +19,7 @@ import { Instrument_Serif } from "next/font/google";
 import Hero from "@/components/ui/animated-shader-hero";
 import React from "react";
 import { useAuth } from "@/contexts/auth-context";
+import { LoginHoverDropdown } from "@/components/auth/login-hover-dropdown";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -132,7 +133,7 @@ function FeaturesSection() {
 
 export default function LandingPage() {
   const router = useRouter();
-  const { user, isReady, logout, openSignIn } = useAuth();
+  const { user, isReady, logout } = useAuth();
   const [welcomeOpen, setWelcomeOpen] = React.useState(false);
 
   React.useEffect(() => {
@@ -175,7 +176,7 @@ export default function LandingPage() {
                   Welcome
                 </span>
                 <span className="block truncate font-mono text-sm font-semibold text-white/90">
-                  {user.username}
+                  {user.email ?? user.username}
                 </span>
               </span>
               <Button
@@ -192,14 +193,7 @@ export default function LandingPage() {
               </Button>
             </>
           ) : (
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={openSignIn}
-              className="h-9 rounded-full px-3 text-xs font-bold uppercase tracking-widest text-white/50 hover:bg-white/10 hover:text-white sm:px-4 sm:text-sm"
-            >
-              Sign in
-            </Button>
+            <LoginHoverDropdown />
           )}
           <Button
             onClick={() => router.push('/editor')}
@@ -227,7 +221,7 @@ export default function LandingPage() {
               <p className="min-w-0 flex-1 text-sm leading-snug text-white/90">
                 <span className="font-bold text-white">Welcome!</span>{" "}
                 <span className="text-white/50">You&apos;re signed in as</span>{" "}
-                <span className="font-mono text-indigo-300">{user.username}</span>
+                <span className="font-mono text-indigo-300">{user.email ?? user.username}</span>
                 <span className="text-white/40"> — start a session when you&apos;re ready.</span>
               </p>
               <button

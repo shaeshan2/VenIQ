@@ -57,6 +57,11 @@ export function UserMenu({ className }: { className?: string }) {
           <span className="mt-1.5 block truncate font-mono text-sm font-semibold text-white">
             {user.username}
           </span>
+          {user.email ? (
+            <span className="mt-0.5 block truncate text-xs text-white/45">
+              {user.email}
+            </span>
+          ) : null}
         </DropdownMenuLabel>
         <DropdownMenuSeparator className="bg-white/10" />
         <DropdownMenuItem
