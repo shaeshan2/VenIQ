@@ -1,12 +1,8 @@
 """
 Crowd Scene Analysis Service
 
-Sends a webcam frame to Gemini Vision and returns a structured scene description:
-  - description: human-readable text for display
-  - energy:      1–10 scale (1=quiet/still, 10=highly energetic/chaotic)
-  - sentiment:   one of: study | chill | calm | party | intense | romantic
-
-This is the first step in the pipeline. The sentiment feeds directly into Spotify recommendations.
+Gemini-specific integration is isolated in this file so debugging, prompt updates,
+and model swaps can happen in one place without touching route logic.
 """
 
 import base64
@@ -17,23 +13,28 @@ from typing import Any
 VALID_SENTIMENTS = {"study", "chill", "calm", "party", "intense", "romantic"}
 DEFAULT_SENTIMENT = "chill"
 DEFAULT_ENERGY = 4
+GEMINI_MODEL_NAME = "gemini-1.5-flash"
 
 
-def describe_crowd(image_b64: str) -> dict:
+def analyze_crowd_frame(image_base64: str) -> dict:
     """
-    Analyze a crowd/venue frame with Gemini Vision.
+    Gemini-facing adapter for scene-level crowd vibe analysis.
 
     Args:
-        image_b64: base64-encoded JPEG frame from a webcam (never written to disk)
+        image_base64: base64-encoded webcam frame (JPEG bytes). Processed in-memory
+                      only and never written to disk.
 
     Returns:
         {
-            "description": "A lecture hall with students working quietly...",
-            "energy": 3,
-            "sentiment": "study"
+            "description": str,
+            "energy": int (1-10),
+            "sentiment": str (allowed label),
+            "analysis_source": "gemini" | "fallback",
+            "fallback_reason": str (only when fallback used)
         }
-    Falls back to defaults if Gemini is unavailable.
     """
+    # API key is expected from environment (.env via config loader).
+    # If missing, we return a deterministic fallback to keep demo reliability.
     api_key = os.getenv("GEMINI_API_KEY", "")
     if not api_key:
         return _fallback("GEMINI_API_KEY not set")
@@ -42,12 +43,14 @@ def describe_crowd(image_b64: str) -> dict:
         import google.generativeai as genai
 
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel(GEMINI_MODEL_NAME)
 
-        image_bytes = base64.b64decode(image_b64, validate=True)
+        image_bytes = base64.b64decode(image_base64, validate=True)
 
         prompt = (
             "You are analyzing a video frame from a venue or event space to help a DJ pick the right music.\n"
+            "Analyze the overall room/crowd vibe only.\n"
+            "Do NOT identify people, infer identity, or describe personal attributes.\n"
             "Describe the scene and determine the appropriate music sentiment.\n\n"
             "Reply with JSON only, no markdown:\n"
             '{"description": "<1-2 sentence description of venue and crowd>", '
@@ -78,6 +81,13 @@ def describe_crowd(image_b64: str) -> dict:
 
     except Exception as e:
         return _fallback(str(e))
+
+
+def describe_crowd(image_b64: str) -> dict:
+    """
+    Backward-compatible alias used by existing routes.
+    """
+    return analyze_crowd_frame(image_b64)
 
 
 def _fallback(reason: str) -> dict:
