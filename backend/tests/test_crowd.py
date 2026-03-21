@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch
 from app import create_app
-from app.routes import crowd as crowd_module
+import app.routes.crowd as crowd_module
 
 
 @pytest.fixture(autouse=True)

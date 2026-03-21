@@ -97,14 +97,40 @@ POST /api/playback/override
 
 ## Sentiment → Spotify Mapping
 
-| Sentiment | Seed Genres | Energy | Tempo |
-|---|---|---|---|
-| `study` | classical, ambient | 0.25 | 70 BPM |
-| `chill` | chill, indie | 0.40 | 90 BPM |
-| `calm` | classical, sleep | 0.20 | 65 BPM |
-| `party` | pop, dance, hip-hop | 0.85 | 128 BPM |
-| `intense` | rock, electronic | 0.90 | 140 BPM |
-| `romantic` | jazz, soul, r-n-b | 0.35 | 80 BPM |
+Two modes only (demo scope):
+
+| Sentiment | Use case | Seed Genres | Energy | Tempo |
+|---|---|---|---|---|
+| `calm` | classrooms, studying, libraries | classical, ambient, study | 0.25 | 72 BPM |
+| `party` | dance floors, events, celebrations | pop, dance, hip-hop | 0.85 | 128 BPM |
+
+## Computer Vision Approach
+
+**We analyze the crowd as a whole scene, not individual faces.**
+
+Gemini Vision is the correct tool for this. It receives a single webcam frame and describes the entire room — crowd density, body language, lighting, activity level — and returns an energy score + sentiment. This is fundamentally different from face-by-face emotion detection.
+
+### Why not the individual-face libraries
+
+| Library | What it sees | Why it doesn't fit |
+|---|---|---|
+| DeepFace | One face at a time | Would need to detect every face, run emotion on each, then average — fragile, misses room context |
+| FER | One face at a time | Same problem, also less actively maintained |
+| MediaPipe | Facial landmarks per face | Fast but requires manual aggregation; no scene understanding |
+| OpenCV + models | Individual faces | Good for real-time but no crowd-level context |
+| **Gemini Vision** ✅ | **Entire scene** | Sees the whole room, reads body language, understands context (e.g. "students working quietly" vs "people dancing") |
+
+### Why Gemini Vision is the right choice for crowds
+
+- Sees the whole frame — density, movement, posture, lighting, venue type
+- Understands *why* the energy is what it is (context-aware)
+- Returns structured JSON: `{ description, energy: 1–10, sentiment }`
+- One API call per frame — no per-face loop needed
+- Already integrated — `app/services/crowd.py`
+
+### Trade-off
+
+Gemini requires an internet connection and has ~1–3s latency per frame. This is acceptable because frames are only captured every 10 seconds, not every frame of video.
 
 ## Key Constraints
 

@@ -18,12 +18,8 @@ _RECOMMENDATIONS_URL = "https://api.spotify.com/v1/recommendations"
 
 # Sentiment → Spotify audio feature targets
 SENTIMENT_MAP: dict[str, dict] = {
-    "study":    {"seed_genres": ["classical", "ambient"],        "target_energy": 0.25, "target_valence": 0.45, "target_tempo": 70},
-    "chill":    {"seed_genres": ["chill", "indie"],              "target_energy": 0.40, "target_valence": 0.55, "target_tempo": 90},
-    "calm":     {"seed_genres": ["classical", "sleep"],          "target_energy": 0.20, "target_valence": 0.50, "target_tempo": 65},
-    "party":    {"seed_genres": ["pop", "dance", "hip-hop"],     "target_energy": 0.85, "target_valence": 0.80, "target_tempo": 128},
-    "intense":  {"seed_genres": ["rock", "electronic"],          "target_energy": 0.90, "target_valence": 0.65, "target_tempo": 140},
-    "romantic": {"seed_genres": ["jazz", "soul", "r-n-b"],       "target_energy": 0.35, "target_valence": 0.65, "target_tempo": 80},
+    "calm":  {"seed_genres": ["classical", "sleep", "piano"],    "target_energy": 0.25, "target_valence": 0.45, "target_tempo": 72},
+    "party": {"seed_genres": ["pop", "dance", "hip-hop"],        "target_energy": 0.85, "target_valence": 0.80, "target_tempo": 128},
 }
 
 _token_cache = {"token": None, "expires_at": 0}
