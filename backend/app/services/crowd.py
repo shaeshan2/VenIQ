@@ -15,6 +15,14 @@ VALID_SENTIMENTS = {"study", "chill", "calm", "party", "intense", "romantic"}
 DEFAULT_SENTIMENT = "chill"
 DEFAULT_ENERGY = 4
 GEMINI_MODEL_NAME = "gemini-1.5-flash"
+GEMINI_MODEL_CANDIDATES = [
+    GEMINI_MODEL_NAME,
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-1.5-flash-latest",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+]
 GEMINI_TIMEOUT_SECONDS = 8
 MAX_DESCRIPTION_CHARS = 180
 SENTIMENT_ALIASES = {
@@ -127,12 +135,32 @@ def _run_gemini_scene_analysis(prompt: str, image_bytes: bytes, api_key: str) ->
     import google.generativeai as genai
 
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(GEMINI_MODEL_NAME)
-    response = model.generate_content(
-        [{"mime_type": "image/jpeg", "data": image_bytes}, prompt],
-        request_options={"timeout": GEMINI_TIMEOUT_SECONDS},
-    )
-    return getattr(response, "text", "") or ""
+
+    last_exc: Exception | None = None
+    for model_name in GEMINI_MODEL_CANDIDATES:
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(
+                [{"mime_type": "image/jpeg", "data": image_bytes}, prompt],
+                request_options={"timeout": GEMINI_TIMEOUT_SECONDS},
+            )
+            return getattr(response, "text", "") or ""
+        except Exception as exc:
+            msg = str(exc).lower()
+            model_unavailable = (
+                ("model" in msg and "not found" in msg)
+                or ("no longer available" in msg)
+                or ("is not supported" in msg)
+            )
+            if model_unavailable:
+                logger.warning("Gemini model unavailable: %s", model_name)
+                last_exc = exc
+                continue
+            raise
+
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("No Gemini model candidates available")
 
 
 def _extract_json_object(raw_text: str) -> dict[str, Any]:

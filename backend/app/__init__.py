@@ -11,8 +11,10 @@ def create_app():
 
     from app.routes.crowd import crowd_bp
     from app.routes.playback import playback_bp
+    from app.routes.health import health_bp
 
     app.register_blueprint(crowd_bp, url_prefix="/api/crowd")
     app.register_blueprint(playback_bp, url_prefix="/api/playback")
+    app.register_blueprint(health_bp, url_prefix="/api/health")
 
     return app
