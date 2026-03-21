@@ -90,4 +90,63 @@ Fallback is designed for graceful demo behavior (avoid frontend breakage).
 
 - `GEMINI_API_KEY` (required for live Gemini crowd analysis)
 - `FLASK_ENV` (recommended: `development` or `production`)
+- `PORT` (optional, defaults to `5001`)
+
+## Real Webcam Verification (Gemini path)
+
+Use this when you want to verify real computer vision, not fallback mode.
+
+1) Start backend:
+
+```bash
+cd backend
+source .venv/bin/activate
+python run.py
+```
+
+2) In another terminal, run webcam test script:
+
+```bash
+cd backend
+source .venv/bin/activate
+python scripts/test_webcam_crowd.py --url "http://127.0.0.1:5001/api/crowd/analyze"
+```
+
+If response includes `"analysis_source": "fallback"`, Gemini path did not run successfully.
+
+## Frontend Polling Contract (Person 1)
+
+- Call `POST /api/crowd/analyze` every `3000-5000ms`
+- Do not run overlapping requests
+- Handle both response shapes:
+  - `changed: false` -> keep current track, update vibe display only
+  - `changed: true` -> update track/player if `track` exists
+
+Example polling logic:
+
+```javascript
+let inFlight = false;
+
+async function pollCrowd(analyzeUrl, imageBase64, onVibe, onTrack) {
+  if (inFlight) return;
+  inFlight = true;
+  try {
+    const res = await fetch(analyzeUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image_base64: imageBase64 }), // raw base64 or data URL both accepted
+    });
+    const data = await res.json();
+
+    // Always update vibe UI from current response.
+    onVibe({ energy: data.energy, description: data.description, sentiment: data.sentiment ?? null });
+
+    if (data.changed && data.track) {
+      onTrack(data.track);
+    }
+  } finally {
+    inFlight = false;
+  }
+}
+```
 

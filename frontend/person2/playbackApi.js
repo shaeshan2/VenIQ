@@ -1,4 +1,4 @@
-const DEFAULT_BASE_URL = "http://localhost:5000/api/playback";
+const DEFAULT_BASE_URL = "http://localhost:5001/api/playback";
 
 function buildUrl(path, baseUrl = DEFAULT_BASE_URL) {
   return `${baseUrl}${path}`;

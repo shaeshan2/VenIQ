@@ -5,7 +5,7 @@ import { overrideBySentiment } from "./playbackApi.js";
  * This project does not transform waveform data. Instead, it selects
  * a new Spotify track that matches the mood and returns it as modified_audio.
  */
-export async function transformMusic(audio, mood, baseUrl = "http://localhost:5000/api/playback") {
+export async function transformMusic(audio, mood, baseUrl = "http://localhost:5001/api/playback") {
   const response = await overrideBySentiment(mood, baseUrl);
 
   return {

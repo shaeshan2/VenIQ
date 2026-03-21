@@ -124,5 +124,15 @@ SPOTIFY_CLIENT_SECRET=...    # same dashboard
 cd backend
 cp .env.example .env        # fill in keys
 pip install -r requirements.txt
-python run.py                # runs on http://localhost:5000
+python run.py                # runs on http://localhost:5001
 ```
+
+## Person 1 Frontend Integration Rules (Required)
+
+1) Use backend URL `http://localhost:5001`.
+2) Poll every 3-5 seconds.
+3) Prevent overlapping requests (skip poll tick if one request is in-flight).
+4) Accept both payload shapes from `POST /api/crowd/analyze`:
+   - `changed: false` -> keep current track, only update vibe UI (description/energy)
+   - `changed: true` -> update player with `track` if present
+5) If webcam returns data URL strings (e.g. `data:image/jpeg;base64,...`), backend now handles this format.

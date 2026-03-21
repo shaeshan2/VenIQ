@@ -39,6 +39,16 @@ def test_analyze_rejects_non_string_image_base64(client):
     assert res.status_code == 400
 
 
+def test_analyze_accepts_data_url_prefixed_base64(client):
+    with patch("app.routes.crowd.describe_crowd", return_value=MOCK_SCENE) as mock_describe, \
+         patch("app.routes.crowd.get_recommendations", return_value=[MOCK_TRACK]):
+        client.post(
+            "/api/crowd/analyze",
+            json={"image_base64": "data:image/jpeg;base64,dGVzdA=="},
+        )
+    mock_describe.assert_called_once_with("dGVzdA==")
+
+
 def test_first_call_always_returns_changed(client):
     with patch("app.routes.crowd.describe_crowd", return_value=MOCK_SCENE), \
          patch("app.routes.crowd.get_recommendations", return_value=[MOCK_TRACK]):

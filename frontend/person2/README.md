@@ -37,7 +37,7 @@ python -m http.server 8080
 - `http://localhost:8080/frontend/person2/index.html`
 
 Optional custom API base:
-- `http://localhost:8080/frontend/person2/index.html?playbackBaseUrl=http://localhost:5000/api/playback`
+- `http://localhost:8080/frontend/person2/index.html?playbackBaseUrl=http://localhost:5001/api/playback`
 
 ## Integration Notes (Person 1 + Person 2)
 
@@ -54,7 +54,7 @@ import { initPerson2UI } from "/frontend/person2/initPerson2UI.js";
 
 const mountEl = document.getElementById("dj-controls-root");
 const person2 = await initPerson2UI(mountEl, {
-  playbackBaseUrl: "http://localhost:5000/api/playback",
+  playbackBaseUrl: "http://localhost:5001/api/playback",
   pollIntervalMs: 3000,
 });
 

@@ -22,6 +22,17 @@ logger = logging.getLogger(__name__)
 _state: dict = {"energy": None, "sentiment": None}
 
 
+def _normalize_image_b64_input(image_b64: str) -> str:
+    """
+    Accept raw base64 or data URL (data:image/jpeg;base64,...).
+    """
+    value = image_b64.strip()
+    if value.startswith("data:") and "," in value:
+        _, payload = value.split(",", 1)
+        return payload.strip()
+    return value
+
+
 @crowd_bp.route("/analyze", methods=["POST"])
 def analyze():
     """
@@ -45,7 +56,7 @@ def analyze():
         return jsonify({"error": "image_base64 is required"}), 400
 
     try:
-        scene = describe_crowd(image_b64.strip())
+        scene = describe_crowd(_normalize_image_b64_input(image_b64))
     except Exception:
         # Guardrail: service should usually return fallback instead of raising.
         logger.exception("Crowd route: describe_crowd raised unexpectedly")

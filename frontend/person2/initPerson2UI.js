@@ -9,7 +9,7 @@ import { createDjControls } from "./djControls.js";
 export async function initPerson2UI(
   container,
   {
-    playbackBaseUrl = "http://localhost:5000/api/playback",
+    playbackBaseUrl = "http://localhost:5001/api/playback",
     pollIntervalMs = 3000,
   } = {}
 ) {
