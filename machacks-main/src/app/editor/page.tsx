@@ -14,6 +14,7 @@ export default function LiveSessionPage() {
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const audioRef = useRef<HTMLAudioElement | null>(null);
 
     const [isSessionActive, setIsSessionActive] = useState(false);
     const [stream, setStream] = useState<MediaStream | null>(null);
@@ -72,6 +73,13 @@ export default function LiveSessionPage() {
     }, [captureFrame]);
 
     const startSession = async () => {
+        // Unlock audio context on user gesture so subsequent .play() calls work
+        try {
+            const ctx = new AudioContext();
+            await ctx.resume();
+            ctx.close();
+        } catch { /* not all browsers need this */ }
+
         try {
             const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
             setStream(mediaStream);
@@ -132,6 +140,15 @@ export default function LiveSessionPage() {
             if (intervalRef.current) clearInterval(intervalRef.current);
         };
     }, [isSessionActive, runAnalysis]);
+
+    // Auto-play preview when track changes
+    useEffect(() => {
+        const audio = audioRef.current;
+        if (!audio || !currentTrack?.preview_url) return;
+        audio.src = currentTrack.preview_url;
+        audio.load();
+        audio.play().catch(() => { /* blocked by browser policy — user can press play manually */ });
+    }, [currentTrack?.uri]);
 
     // Clean up stream on unmount
     useEffect(() => {
@@ -342,6 +359,9 @@ export default function LiveSessionPage() {
                             </div>
                         </div>
 
+                        {/* Audio element is always mounted so the ref is stable */}
+                        <audio ref={audioRef} controls className="w-full rounded-xl" />
+
                         {currentTrack && (
                             <div className="space-y-3">
                                 {currentTrack.spotify_url && (
@@ -353,15 +373,6 @@ export default function LiveSessionPage() {
                                     >
                                         Open in Spotify
                                     </a>
-                                )}
-                                {currentTrack.preview_url && (
-                                    <audio
-                                        key={currentTrack.uri}
-                                        controls
-                                        autoPlay
-                                        className="w-full rounded-xl"
-                                        src={currentTrack.preview_url}
-                                    />
                                 )}
                                 {!currentTrack.preview_url && (
                                     <p className="text-xs text-white/30 text-center">No preview available for this track.</p>
