@@ -17,9 +17,9 @@ export default function LandingPage() {
       <nav className="fixed top-0 left-0 right-0 h-20 border-b border-white/5 bg-[#020202]/50 backdrop-blur-2xl z-50 flex items-center justify-between px-6 md:px-12">
         <Link href="/" className="flex items-center gap-3 group cursor-pointer">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-indigo-500/20 group-hover:scale-105 transition-transform">
-            <span className="text-white font-black text-2xl uppercase tracking-tighter">S</span>
+            <span className="text-white font-black text-2xl uppercase tracking-tighter">V</span>
           </div>
-          <span className="font-black text-2xl tracking-tight text-white group-hover:text-indigo-200 transition-colors">SoundSmith</span>
+          <span className="font-black text-2xl tracking-tight bg-gradient-to-r from-violet-300 via-fuchsia-300 to-pink-300 bg-clip-text text-transparent">Ven<span className="text-white">IQ</span></span>
         </Link>
         <div className="hidden md:flex items-center gap-8 text-sm font-bold uppercase tracking-widest text-white/50">
           <span className="hover:text-white cursor-pointer transition-colors">Features</span>
@@ -43,7 +43,7 @@ export default function LandingPage() {
             line1: "Music that",
             line2: "understands you."
           }}
-          subtitle="SoundSmith is an adaptive music therapy system that listens to your emotions and reshapes music in real time to heal, calm, and support."
+          subtitle="VenIQ is a crowd-aware DJ system that reads the room in real time and adapts the music to match the energy of the moment."
           buttons={{
             primary: {
               text: "Start Session",

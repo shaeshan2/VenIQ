@@ -7,7 +7,7 @@ POST /api/playback/override  → DJ manually picks a different song
 
 from flask import Blueprint, request, jsonify
 from app.services.songs_db import get_song
-from app.services.youtube import search_youtube
+from app.services.deezer import search_deezer
 
 playback_bp = Blueprint("playback", __name__)
 
@@ -45,7 +45,7 @@ def override():
         if not song:
             return jsonify({"error": "No tracks found for that sentiment"}), 404
 
-        yt = search_youtube(song["name"], song["artist"])
+        dz = search_deezer(song["name"], song["artist"])
         track = {
             "name":        song["name"],
             "artist":      song["artist"],
@@ -53,8 +53,10 @@ def override():
             "key":         song["key"],
             "genre":       song["genre"],
             "duration_s":  song["duration_s"],
-            "youtube_id":  yt["video_id"]    if yt else None,
-            "youtube_url": yt["youtube_url"] if yt else None,
+            "preview_url": dz["preview_url"] if dz else None,
+            "deezer_url":  dz["deezer_url"]  if dz else None,
+            "deezer_id":   dz["deezer_id"]   if dz else None,
+            "cover_url":   dz["cover_url"]   if dz else None,
         }
 
     else:

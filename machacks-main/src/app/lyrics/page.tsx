@@ -29,7 +29,7 @@ export default function LyricsPage() {
                                 <h1 className="text-3xl font-bold tracking-tight text-white">Lyrics Lab</h1>
                             </div>
                             <p className="text-white/30 max-w-lg text-sm leading-relaxed">
-                                Use SoundSmith's AI to refine your message. Write line-by-line or let the AI rewrite entire stanzas in your preferred style.
+                                Use VenIQ's AI to refine your message. Write line-by-line or let the AI rewrite entire stanzas in your preferred style.
                             </p>
                         </div>
                         <div className="flex items-center gap-3 relative z-10">

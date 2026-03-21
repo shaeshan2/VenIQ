@@ -14,47 +14,38 @@ import {
     ChevronLeft,
 } from "lucide-react";
 import { analyzeFrame, clearHistory, overrideSentiment, type AnalysisEntry, type Track } from "@/lib/api";
+import * as Tone from "tone";
 
 const CAPTURE_INTERVAL_MS = 7000;
 const QUEUE_PREFILL = 3;
-const FADE_SECS = 2.5;
 
-declare global {
-    interface Window {
-        YT: { Player: new (id: string, opts: object) => YTPlayer };
-        onYouTubeIframeAPIReady: () => void;
-    }
-}
-interface YTPlayer {
-    loadVideoById(id: string): void;
-    playVideo(): void;
-    pauseVideo(): void;
-    setVolume(v: number): void;
-    unMute(): void;
-    setPlaybackRate(r: number): void;
-}
+// ─── Tone.js transition types ────────────────────────────────────────────────
+type FilterMode = "none" | "lowpass" | "highpass";
 
-function rampYTVolume(player: YTPlayer, from: number, to: number, ms: number) {
-    const steps = 30;
-    const stepMs = ms / steps;
-    const delta = (to - from) / steps;
-    let current = from;
-    let count = 0;
-    const timer = setInterval(() => {
-        count++;
-        current += delta;
-        player.setVolume(Math.max(0, Math.min(100, Math.round(current))));
-        if (count >= steps) clearInterval(timer);
-    }, stepMs);
+function pickTransition(): { duration: number; filter: FilterMode } {
+    const duration = 2 + Math.random() * 3; // 2–5 s
+    const filter = (["none", "lowpass", "highpass"] as FilterMode[])[
+        Math.floor(Math.random() * 3)
+    ];
+    return { duration, filter };
 }
 
 export default function LiveSessionPage() {
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const ytPlayerRef = useRef<YTPlayer | null>(null);
-    const ytReadyRef = useRef(false);
-    const pendingVideoId = useRef<string | null>(null);
+
+    // Tone.js refs — created once, reused across tracks
+    const toneReadyRef = useRef(false);
+    const playerA = useRef<Tone.Player | null>(null);
+    const playerB = useRef<Tone.Player | null>(null);
+    const filterA = useRef<Tone.Filter | null>(null);
+    const filterB = useRef<Tone.Filter | null>(null);
+    const volA = useRef<Tone.Volume | null>(null);
+    const volB = useRef<Tone.Volume | null>(null);
+    // 0 = A is audible, 1 = B is audible
+    const activeSide = useRef<0 | 1>(0);
+    const hasPlayedRef = useRef(false);
 
     const [isSessionActive, setIsSessionActive] = useState(false);
     const [stream, setStream] = useState<MediaStream | null>(null);
@@ -70,60 +61,101 @@ export default function LiveSessionPage() {
     const [eventLog, setEventLog] = useState<AnalysisEntry[]>([]);
     const [queue, setQueue] = useState<Track[]>([]);
 
-    useEffect(() => {
-        if (document.getElementById("yt-api-script")) return;
-        const tag = document.createElement("script");
-        tag.id = "yt-api-script";
-        tag.src = "https://www.youtube.com/iframe_api";
-        document.head.appendChild(tag);
+    // ── Tone.js setup ──────────────────────────────────────────────────────────
+    // Must be called inside a click handler (user gesture) so the AudioContext
+    // is allowed to start. We call it in startSession().
+    async function initTone() {
+        if (toneReadyRef.current) return;
+        await Tone.start();
 
-        window.onYouTubeIframeAPIReady = () => {
-            ytPlayerRef.current = new window.YT.Player("yt-player", {
-                height: "200",
-                width: "100%",
-                playerVars: { autoplay: 1, controls: 1, rel: 0, modestbranding: 1, mute: 1 },
-                events: {
-                    onReady: (e: { target: YTPlayer }) => {
-                        e.target.setVolume(80);
-                        e.target.setPlaybackRate(1);
-                        ytReadyRef.current = true;
-                        if (pendingVideoId.current) {
-                            e.target.loadVideoById(pendingVideoId.current);
-                            pendingVideoId.current = null;
-                        }
-                    },
-                    onStateChange: (e: { data: number; target: YTPlayer }) => {
-                        if (e.data === 1) {
-                            e.target.unMute();
-                            e.target.setVolume(80);
-                            e.target.setPlaybackRate(1);
-                        }
-                    },
-                },
-            });
-        };
-    }, []);
+        const pA = new Tone.Player();
+        const pB = new Tone.Player();
+        const fA = new Tone.Filter(20000, "lowpass");
+        const fB = new Tone.Filter(20000, "lowpass");
+        // Each player has its own volume node — we ramp these independently
+        // so there's no CrossFade bleed on either side.
+        const vA = new Tone.Volume(0);   // A starts audible
+        const vB = new Tone.Volume(-80); // B starts silent
 
-    const loadYouTubeTrack = useCallback(async (videoId: string) => {
-        const yt = ytPlayerRef.current;
-        if (!yt || !ytReadyRef.current) {
-            pendingVideoId.current = videoId;
+        // Signal chain: playerX → filterX → volX → destination
+        pA.connect(fA); fA.connect(vA); vA.toDestination();
+        pB.connect(fB); fB.connect(vB); vB.toDestination();
+
+        playerA.current = pA;
+        playerB.current = pB;
+        filterA.current = fA;
+        filterB.current = fB;
+        volA.current = vA;
+        volB.current = vB;
+        toneReadyRef.current = true;
+    }
+
+    const loadDeezerTrack = useCallback(async (previewUrl: string) => {
+        await initTone();
+
+        const side = activeSide.current;
+
+        // Inactive side receives the new track
+        const incoming       = side === 0 ? playerB.current! : playerA.current!;
+        const incomingVol    = side === 0 ? volB.current!    : volA.current!;
+        const incomingFilter = side === 0 ? filterB.current! : filterA.current!;
+        const outgoing       = side === 0 ? playerA.current! : playerB.current!;
+        const outgoingVol    = side === 0 ? volA.current!    : volB.current!;
+        const outgoingFilter = side === 0 ? filterA.current! : filterB.current!;
+
+        // Load buffer — incoming is still silent during network fetch
+        await incoming.load(previewUrl);
+        incoming.loop = true;
+
+        // Guarantee silence on incoming before we start() it
+        incomingVol.volume.value = -80;
+        incomingFilter.type = "lowpass";
+        incomingFilter.frequency.value = 20000;
+
+        if (!hasPlayedRef.current) {
+            // First track — no crossfade needed
+            incomingVol.volume.value = 0;
+            incoming.start();
+            hasPlayedRef.current = true;
+            activeSide.current = side === 0 ? 1 : 0;
             return;
         }
-        rampYTVolume(yt, 80, 0, FADE_SECS * 1000);
-        await new Promise((r) => setTimeout(r, FADE_SECS * 1000));
-        yt.loadVideoById(videoId);
-        yt.setPlaybackRate(1);
-        setTimeout(() => rampYTVolume(yt, 0, 80, FADE_SECS * 1000), 500);
+
+        const { duration, filter } = pickTransition();
+
+        // Apply filter sweep to the outgoing (fading-out) track
+        if (filter === "lowpass") {
+            outgoingFilter.type = "lowpass";
+            outgoingFilter.frequency.value = 20000;
+            outgoingFilter.frequency.rampTo(200, duration);
+        } else if (filter === "highpass") {
+            outgoingFilter.type = "highpass";
+            outgoingFilter.frequency.value = 20;
+            outgoingFilter.frequency.rampTo(4000, duration);
+        }
+
+        // Start incoming silently, then ramp both volumes simultaneously.
+        // Because incomingVol is already at -80, start() produces no sound
+        // until the ramp opens it — no bleed, no premature playback.
+        incoming.start();
+        incomingVol.volume.rampTo(0, duration);
+        outgoingVol.volume.rampTo(-80, duration);
+
+        activeSide.current = side === 0 ? 1 : 0;
+
+        // After the fade, stop old player and reset its nodes for next use
+        setTimeout(() => {
+            try { outgoing.stop(); } catch { /* already stopped */ }
+            outgoingVol.volume.value = -80;
+            outgoingFilter.type = "lowpass";
+            outgoingFilter.frequency.value = 20000;
+        }, (duration + 0.4) * 1000);
     }, []);
 
-    const loadTrack = useCallback(
-        async (track: Track) => {
-            setCurrentTrack(track);
-            if (track.youtube_id) await loadYouTubeTrack(track.youtube_id);
-        },
-        [loadYouTubeTrack]
-    );
+    const loadTrack = useCallback(async (track: Track) => {
+        setCurrentTrack(track);
+        if (track.preview_url) await loadDeezerTrack(track.preview_url);
+    }, [loadDeezerTrack]);
 
     const skipTrack = useCallback(async () => {
         if (queue.length === 0) return;
@@ -169,6 +201,8 @@ export default function LiveSessionPage() {
     }, [captureFrame, loadTrack, overrideLock]);
 
     const startSession = async () => {
+        // Tone.start() must happen inside a user-gesture handler
+        await Tone.start();
         try {
             const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
             setStream(mediaStream);
@@ -179,6 +213,7 @@ export default function LiveSessionPage() {
             setCurrentTrack(null);
             setQueue([]);
             setCurrentMood("Analyzing…");
+            hasPlayedRef.current = false;
         } catch {
             alert("Could not access the camera. Please allow camera access.");
         }
@@ -188,6 +223,15 @@ export default function LiveSessionPage() {
         if (stream) stream.getTracks().forEach((t) => t.stop());
         if (intervalRef.current) clearInterval(intervalRef.current);
         intervalRef.current = null;
+
+        // Stop audio and reset volume nodes for the next session
+        try { playerA.current?.stop(); } catch { /* already stopped */ }
+        try { playerB.current?.stop(); } catch { /* already stopped */ }
+        if (volA.current) volA.current.volume.value = -80;
+        if (volB.current) volB.current.volume.value = -80;
+        hasPlayedRef.current = false;
+        activeSide.current = 0;
+
         setStream(null);
         setIsSessionActive(false);
         setIsAnalyzing(false);
@@ -231,10 +275,17 @@ export default function LiveSessionPage() {
         };
     }, [isSessionActive, runAnalysis]);
 
+    // Cleanup on unmount
     useEffect(() => {
         return () => {
             if (stream) stream.getTracks().forEach((t) => t.stop());
             if (intervalRef.current) clearInterval(intervalRef.current);
+            try { playerA.current?.stop(); } catch { /* ok */ }
+            try { playerB.current?.stop(); } catch { /* ok */ }
+            volA.current?.dispose();
+            volB.current?.dispose();
+            filterA.current?.dispose();
+            filterB.current?.dispose();
         };
     }, [stream]);
 
@@ -253,11 +304,20 @@ export default function LiveSessionPage() {
     });
 
     return (
-        <div className="flex min-h-[100dvh] flex-col">
+        <div className="flex min-h-[100dvh] flex-col bg-zinc-950">
             <canvas ref={canvasRef} className="hidden" />
 
+            {/* Ambient background glow — mood-reactive */}
+            <div className="pointer-events-none fixed inset-0 overflow-hidden" aria-hidden>
+                <div className="absolute -top-40 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-violet-950/50 blur-3xl" />
+                <div
+                    className="absolute bottom-10 right-0 h-72 w-72 rounded-full blur-3xl transition-colors duration-1000"
+                    style={{ background: currentMood === "party" ? "rgba(134,25,143,0.12)" : "rgba(49,46,129,0.12)" }}
+                />
+            </div>
+
             {/* Minimal chrome */}
-            <header className="flex shrink-0 items-center justify-between border-b border-zinc-800/80 px-4 py-3 sm:px-6">
+            <header className="sticky top-0 z-10 flex shrink-0 items-center justify-between border-b border-zinc-800/60 bg-zinc-950/75 px-4 py-3 backdrop-blur-md sm:px-6">
                 <Link
                     href="/"
                     className="inline-flex items-center gap-2 text-sm font-medium text-zinc-400 transition hover:text-zinc-100"
@@ -265,13 +325,24 @@ export default function LiveSessionPage() {
                     <ChevronLeft className="h-4 w-4" />
                     Home
                 </Link>
-                <p className="text-center text-sm font-semibold tracking-tight text-zinc-100">Crowd DJ</p>
+                <span className="bg-gradient-to-r from-violet-300 via-fuchsia-300 to-pink-300 bg-clip-text text-base font-black tracking-tight text-transparent">
+                    Ven<span className="text-white">IQ</span>
+                </span>
                 <span className="w-14 sm:w-20" aria-hidden />
             </header>
 
             <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-5 px-4 pb-10 pt-6 sm:gap-6 sm:px-6">
                 {/* Webcam — primary focus */}
-                <section className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/50 shadow-2xl shadow-black/40">
+                <section
+                    className="overflow-hidden rounded-2xl border border-zinc-800/70 bg-zinc-900/50 shadow-2xl transition-shadow duration-1000"
+                    style={{
+                        boxShadow: isSessionActive
+                            ? currentMood === "party"
+                                ? "0 0 60px -12px rgba(192,38,211,0.3), 0 25px 50px -12px rgba(0,0,0,0.6)"
+                                : "0 0 60px -12px rgba(99,102,241,0.25), 0 25px 50px -12px rgba(0,0,0,0.6)"
+                            : "0 25px 50px -12px rgba(0,0,0,0.5)",
+                    }}
+                >
                     <div className="flex items-center justify-between border-b border-zinc-800/80 px-4 py-2.5">
                         <div className="flex items-center gap-2">
                             <span
@@ -289,7 +360,8 @@ export default function LiveSessionPage() {
                             autoPlay
                             playsInline
                             muted
-                            className={`absolute inset-0 h-full w-full object-cover ${isSessionActive ? "opacity-100" : "opacity-0"}`}
+                            className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-500 ${isSessionActive ? "opacity-100" : "opacity-0"}`}
+                            style={{ transform: "scaleX(-1)" }}
                         />
                         {!isSessionActive && (
                             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-8 text-center text-zinc-500">
@@ -303,7 +375,12 @@ export default function LiveSessionPage() {
                                     <div
                                         key={i}
                                         className={`w-[5%] max-w-2 rounded-t bg-gradient-to-t ${currentMood === "party" ? "from-fuchsia-600/80 to-pink-500/40" : "from-indigo-600/80 to-violet-500/40"}`}
-                                        style={{ height: `${h}%` }}
+                                        style={{
+                                            height: `${h}%`,
+                                            filter: currentMood === "party"
+                                                ? "drop-shadow(0 0 4px rgba(217,70,239,0.7))"
+                                                : "drop-shadow(0 0 4px rgba(129,140,248,0.6))",
+                                        }}
                                     />
                                 ))}
                             </div>
@@ -311,8 +388,8 @@ export default function LiveSessionPage() {
                     </div>
                 </section>
 
-                {/* Compact status: mood + song (under webcam) */}
-                <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-4 py-3 sm:px-5">
+                {/* Compact status: mood + song */}
+                <section className="rounded-xl border border-zinc-700/50 bg-zinc-900/30 px-4 py-3 shadow-lg backdrop-blur-sm sm:px-5">
                     <div className="grid gap-3 sm:grid-cols-3 sm:gap-4">
                         <div>
                             <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Mood</p>
@@ -332,7 +409,10 @@ export default function LiveSessionPage() {
                                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-zinc-800">
                                     <div
                                         className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-fuchsia-500 transition-[width] duration-500"
-                                        style={{ width: `${(currentEnergy ?? 0) * 10}%` }}
+                                        style={{
+                                            width: `${(currentEnergy ?? 0) * 10}%`,
+                                            boxShadow: "0 0 8px rgba(139,92,246,0.6)",
+                                        }}
                                     />
                                 </div>
                             )}
@@ -351,25 +431,46 @@ export default function LiveSessionPage() {
                     </p>
                 </section>
 
-                {/* Player + optional queue */}
+                {/* Player row — cover art + queue */}
                 <section className="space-y-3">
-                    <div className="overflow-hidden rounded-xl border border-zinc-800 bg-black">
-                        <div id="yt-player" />
-                    </div>
+                    {currentTrack && (
+                        <div className="flex items-center gap-3 overflow-hidden rounded-xl border border-zinc-700/50 bg-zinc-900/40 px-4 py-3 shadow-lg backdrop-blur-sm">
+                            {currentTrack.cover_url && (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                    src={currentTrack.cover_url}
+                                    alt={`${currentTrack.name} cover`}
+                                    className="h-12 w-12 shrink-0 rounded-lg object-cover ring-1 ring-white/10"
+                                    style={{ boxShadow: "0 0 12px rgba(139,92,246,0.3)" }}
+                                />
+                            )}
+                            <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-semibold text-zinc-100">{currentTrack.name}</p>
+                                <p className="truncate text-xs text-zinc-500">{currentTrack.artist}</p>
+                                {currentTrack.bpm && (
+                                    <p className="mt-0.5 font-mono text-[10px] text-zinc-600">
+                                        {currentTrack.bpm} BPM · {currentTrack.key}
+                                    </p>
+                                )}
+                            </div>
+                            <div className="flex shrink-0 flex-col items-end gap-1.5">
+                                {currentTrack.deezer_url && (
+                                    <a
+                                        href={currentTrack.deezer_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-xs font-medium text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
+                                    >
+                                        Deezer
+                                    </a>
+                                )}
+                                {!currentTrack.preview_url && (
+                                    <span className="text-xs text-amber-200/80">No preview found</span>
+                                )}
+                            </div>
+                        </div>
+                    )}
                     <div className="flex flex-wrap items-center gap-2">
-                        {currentTrack?.youtube_url && (
-                            <a
-                                href={currentTrack.youtube_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-xs font-medium text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
-                            >
-                                Open in YouTube
-                            </a>
-                        )}
-                        {currentTrack && !currentTrack.youtube_id && (
-                            <span className="text-xs text-amber-200/80">Set YOUTUBE_API_KEY in backend/.env</span>
-                        )}
                         {queue.length > 0 && (
                             <Button
                                 type="button"
