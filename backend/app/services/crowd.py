@@ -12,11 +12,11 @@ This is the first step in the pipeline. The sentiment feeds directly into Spotif
 import base64
 import json
 import os
-from config import Config
+from typing import Any
 
 VALID_SENTIMENTS = {"study", "chill", "calm", "party", "intense", "romantic"}
 DEFAULT_SENTIMENT = "chill"
-DEFAULT_ENERGY = 5
+DEFAULT_ENERGY = 4
 
 
 def describe_crowd(image_b64: str) -> dict:
@@ -44,7 +44,7 @@ def describe_crowd(image_b64: str) -> dict:
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel("gemini-1.5-flash")
 
-        image_bytes = base64.b64decode(image_b64)
+        image_bytes = base64.b64decode(image_b64, validate=True)
 
         prompt = (
             "You are analyzing a video frame from a venue or event space to help a DJ pick the right music.\n"
@@ -69,21 +69,12 @@ def describe_crowd(image_b64: str) -> dict:
             [{"mime_type": "image/jpeg", "data": image_bytes}, prompt]
         )
 
-        raw = response.text.strip().strip("```json").strip("```").strip()
-        result = json.loads(raw)
+        raw = getattr(response, "text", "") or ""
+        parsed = _extract_json_object(raw)
+        result = _normalize_scene(parsed)
 
-        energy = int(result.get("energy", DEFAULT_ENERGY))
-        energy = max(1, min(10, energy))
-
-        sentiment = result.get("sentiment", DEFAULT_SENTIMENT).lower()
-        if sentiment not in VALID_SENTIMENTS:
-            sentiment = DEFAULT_SENTIMENT
-
-        return {
-            "description": result.get("description", ""),
-            "energy": energy,
-            "sentiment": sentiment,
-        }
+        result["analysis_source"] = "gemini"
+        return result
 
     except Exception as e:
         return _fallback(str(e))
@@ -91,8 +82,53 @@ def describe_crowd(image_b64: str) -> dict:
 
 def _fallback(reason: str) -> dict:
     return {
-        "description": "Scene analysis unavailable.",
+        "description": "Scene appears relaxed with moderate-low activity.",
         "energy": DEFAULT_ENERGY,
         "sentiment": DEFAULT_SENTIMENT,
+        "analysis_source": "fallback",
         "fallback_reason": reason,
     }
+
+
+def _extract_json_object(raw_text: str) -> dict[str, Any]:
+    """Extract and parse the first JSON object from a model response."""
+    text = raw_text.strip()
+    if not text:
+        raise ValueError("Gemini returned empty response")
+
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            return data
+    except json.JSONDecodeError:
+        pass
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        raise ValueError("No JSON object found in Gemini response")
+
+    candidate = text[start : end + 1]
+    data = json.loads(candidate)
+    if not isinstance(data, dict):
+        raise ValueError("Gemini response JSON must be an object")
+    return data
+
+
+def _normalize_scene(scene: dict[str, Any]) -> dict:
+    """Return a validated scene result matching the API contract."""
+    description = str(scene.get("description", "")).strip()
+    if not description:
+        description = "Crowd scene analyzed."
+
+    try:
+        energy = int(scene.get("energy", DEFAULT_ENERGY))
+    except (TypeError, ValueError):
+        energy = DEFAULT_ENERGY
+    energy = max(1, min(10, energy))
+
+    sentiment = str(scene.get("sentiment", DEFAULT_SENTIMENT)).strip().lower()
+    if sentiment not in VALID_SENTIMENTS:
+        sentiment = DEFAULT_SENTIMENT
+
+    return {"description": description, "energy": energy, "sentiment": sentiment}

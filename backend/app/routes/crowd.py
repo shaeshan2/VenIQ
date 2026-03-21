@@ -36,13 +36,15 @@ def analyze():
     data = request.get_json(silent=True) or {}
     image_b64 = data.get("image_base64")
 
-    if not image_b64:
+    if not image_b64 or not isinstance(image_b64, str):
         return jsonify({"error": "image_base64 is required"}), 400
 
     scene = describe_crowd(image_b64)
     new_energy = scene["energy"]
     new_sentiment = scene["sentiment"]
     description = scene["description"]
+    analysis_source = scene.get("analysis_source", "gemini")
+    fallback_reason = scene.get("fallback_reason")
     threshold = current_app.config.get("ENERGY_CHANGE_THRESHOLD", 2)
 
     prev_energy = _state["energy"]
@@ -53,11 +55,16 @@ def analyze():
     sentiment_shifted = prev_sentiment != new_sentiment
 
     if not energy_shifted and not sentiment_shifted:
-        return jsonify({
+        payload = {
             "changed": False,
             "energy": new_energy,
             "description": description,
-        })
+            "sentiment": new_sentiment,
+            "analysis_source": analysis_source,
+        }
+        if fallback_reason:
+            payload["fallback_reason"] = fallback_reason
+        return jsonify(payload)
 
     # Update state
     _state["energy"] = new_energy
@@ -65,22 +72,30 @@ def analyze():
 
     tracks = get_recommendations(new_sentiment, limit=5)
     if not tracks:
-        return jsonify({
+        payload = {
             "changed": True,
             "energy": new_energy,
             "description": description,
             "sentiment": new_sentiment,
             "track": None,
             "error": "Spotify returned no tracks",
-        })
+            "analysis_source": analysis_source,
+        }
+        if fallback_reason:
+            payload["fallback_reason"] = fallback_reason
+        return jsonify(payload)
 
     track = tracks[0]
     set_current_track(track, source="auto")
 
-    return jsonify({
+    payload = {
         "changed": True,
         "energy": new_energy,
         "description": description,
         "sentiment": new_sentiment,
         "track": track,
-    })
+        "analysis_source": analysis_source,
+    }
+    if fallback_reason:
+        payload["fallback_reason"] = fallback_reason
+    return jsonify(payload)

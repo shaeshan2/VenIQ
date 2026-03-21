@@ -29,6 +29,11 @@ def test_analyze_requires_image(client):
     assert res.status_code == 400
 
 
+def test_analyze_rejects_non_string_image_base64(client):
+    res = client.post("/api/crowd/analyze", json={"image_base64": 123})
+    assert res.status_code == 400
+
+
 def test_first_call_always_returns_changed(client):
     with patch("app.routes.crowd.describe_crowd", return_value=MOCK_SCENE), \
          patch("app.routes.crowd.get_recommendations", return_value=[MOCK_TRACK]):
@@ -37,6 +42,7 @@ def test_first_call_always_returns_changed(client):
     data = res.get_json()
     assert data["changed"] is True
     assert data["track"]["name"] == "Test Song"
+    assert data["analysis_source"] == "gemini"
 
 
 def test_stable_crowd_returns_no_change(client):
@@ -47,7 +53,10 @@ def test_stable_crowd_returns_no_change(client):
          patch("app.routes.crowd.get_recommendations", return_value=[MOCK_TRACK]):
         res = client.post("/api/crowd/analyze", json={"image_base64": "dGVzdA=="})
     assert res.status_code == 200
-    assert res.get_json()["changed"] is False
+    data = res.get_json()
+    assert data["changed"] is False
+    assert data["sentiment"] == "party"
+    assert data["analysis_source"] == "gemini"
 
 
 def test_energy_shift_above_threshold_returns_changed(client):
@@ -72,3 +81,19 @@ def test_sentiment_change_alone_triggers_recommendation(client):
          patch("app.routes.crowd.get_recommendations", return_value=[MOCK_TRACK]):
         res = client.post("/api/crowd/analyze", json={"image_base64": "dGVzdA=="})
     assert res.get_json()["changed"] is True
+
+
+def test_fallback_scene_fields_are_propagated(client):
+    fallback_scene = {
+        "description": "Scene appears relaxed with moderate-low activity.",
+        "energy": 4,
+        "sentiment": "chill",
+        "analysis_source": "fallback",
+        "fallback_reason": "Gemini timeout",
+    }
+    with patch("app.routes.crowd.describe_crowd", return_value=fallback_scene), \
+         patch("app.routes.crowd.get_recommendations", return_value=[MOCK_TRACK]):
+        res = client.post("/api/crowd/analyze", json={"image_base64": "dGVzdA=="})
+    data = res.get_json()
+    assert data["analysis_source"] == "fallback"
+    assert data["fallback_reason"] == "Gemini timeout"

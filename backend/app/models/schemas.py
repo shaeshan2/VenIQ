@@ -7,6 +7,8 @@ class SceneResult:
     description: str
     energy: int          # 1–10
     sentiment: str       # study | chill | calm | party | intense | romantic
+    analysis_source: str = "gemini"  # gemini | fallback
+    fallback_reason: Optional[str] = None
 
 
 @dataclass
@@ -25,3 +27,5 @@ class CrowdAnalyzeResponse:
     description: str
     sentiment: Optional[str] = None
     track: Optional[Track] = None
+    analysis_source: Optional[str] = None  # gemini | fallback
+    fallback_reason: Optional[str] = None
