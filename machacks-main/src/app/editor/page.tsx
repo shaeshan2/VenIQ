@@ -22,6 +22,7 @@ interface YTPlayer {
     playVideo(): void;
     pauseVideo(): void;
     setVolume(v: number): void;
+    unMute(): void;
     setPlaybackRate(r: number): void;
     getPlaybackRate(): number;
 }
@@ -30,8 +31,9 @@ export default function LiveSessionPage() {
     const videoRef   = useRef<HTMLVideoElement>(null);
     const canvasRef  = useRef<HTMLCanvasElement>(null);
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const ytPlayerRef = useRef<YTPlayer | null>(null);
-    const ytReadyRef  = useRef(false);
+    const ytPlayerRef    = useRef<YTPlayer | null>(null);
+    const ytReadyRef     = useRef(false);
+    const pendingVideoId = useRef<string | null>(null);  // track queued before player ready
     const beatCleanupRef = useRef<() => void>(() => {});
 
     const [isSessionActive, setIsSessionActive] = useState(false);
@@ -61,30 +63,47 @@ export default function LiveSessionPage() {
             ytPlayerRef.current = new window.YT.Player("yt-player", {
                 height: "180",
                 width: "100%",
-                playerVars: { autoplay: 1, controls: 1, rel: 0, modestbranding: 1 },
+                // mute:1 lets autoplay work in all browsers; we unmute once playing starts
+                playerVars: { autoplay: 1, controls: 1, rel: 0, modestbranding: 1, mute: 1 },
                 events: {
                     onReady: (e: { target: YTPlayer }) => {
                         e.target.setVolume(80);
                         ytReadyRef.current = true;
+                        // Play any track that arrived before the player was ready
+                        if (pendingVideoId.current) {
+                            e.target.loadVideoById(pendingVideoId.current);
+                            pendingVideoId.current = null;
+                        }
+                    },
+                    onStateChange: (e: { data: number; target: YTPlayer }) => {
+                        // State 1 = playing — unmute now that autoplay is confirmed
+                        if (e.data === 1) {
+                            e.target.unMute();
+                            e.target.setVolume(80);
+                        }
                     },
                 },
             });
         };
     }, []);
 
-    // Load new video when track changes and adjust playback rate by energy
+    // Load new video only when the track (youtube_id) changes
     useEffect(() => {
-        if (!currentTrack?.youtube_id || !ytReadyRef.current) return;
-        const yt = ytPlayerRef.current;
-        if (!yt) return;
+        if (!currentTrack?.youtube_id) return;
+        if (!ytReadyRef.current || !ytPlayerRef.current) {
+            // Player not ready yet — queue it; onReady will pick it up
+            pendingVideoId.current = currentTrack.youtube_id;
+            return;
+        }
+        ytPlayerRef.current.loadVideoById(currentTrack.youtube_id);
+    }, [currentTrack?.youtube_id]);
 
-        yt.loadVideoById(currentTrack.youtube_id);
-
-        // Slight tempo nudge: calm slows down, party speeds up
-        const energy = currentEnergy ?? 5;
-        const rate = energy >= 8 ? 1.25 : energy <= 3 ? 0.75 : 1.0;
-        setTimeout(() => yt.setPlaybackRate(rate), 1500);
-    }, [currentTrack?.youtube_id, currentEnergy]);
+    // Adjust playback rate when energy changes (independent of song load)
+    useEffect(() => {
+        if (currentEnergy === null || !ytReadyRef.current || !ytPlayerRef.current) return;
+        const rate = currentEnergy >= 8 ? 1.25 : currentEnergy <= 3 ? 0.75 : 1.0;
+        ytPlayerRef.current.setPlaybackRate(rate);
+    }, [currentEnergy]);
 
     // ── Tone.js beat overlay ──────────────────────────────────────────────────
 
