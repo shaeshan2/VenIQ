@@ -6,7 +6,7 @@ import { Camera, Play, Square, Activity, HeartPulse, BrainCircuit, Mic, Music2 }
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { analyzeFrame, clearHistory, type AnalysisEntry, type Track } from "@/lib/api";
+import { analyzeFrame, clearHistory, overrideSentiment, type AnalysisEntry, type Track } from "@/lib/api";
 
 const CAPTURE_INTERVAL_MS = 7000; // capture every 7 seconds
 
@@ -86,6 +86,22 @@ export default function LiveSessionPage() {
         }
     };
 
+    const [isOverriding, setIsOverriding] = useState(false);
+
+    const forceMode = async (mode: "party" | "calm") => {
+        setIsOverriding(true);
+        try {
+            const track = await overrideSentiment(mode);
+            if (track) {
+                setCurrentTrack(track);
+                setCurrentMood(mode);
+                setLiveDescription(`DJ override → ${mode} mode`);
+            }
+        } finally {
+            setIsOverriding(false);
+        }
+    };
+
     const stopSession = () => {
         if (stream) stream.getTracks().forEach(t => t.stop());
         if (intervalRef.current) clearInterval(intervalRef.current);
@@ -141,7 +157,25 @@ export default function LiveSessionPage() {
                     <h1 className="text-4xl font-black text-white tracking-tight">Live DJ Session</h1>
                     <p className="text-white/40 mt-2">Crowd mood detection · Spotify recommendations · Real-time adaptation.</p>
                 </div>
-                <div className="flex gap-4">
+                <div className="flex gap-3">
+                    {isSessionActive && (
+                        <>
+                            <Button
+                                onClick={() => forceMode("calm")}
+                                disabled={isOverriding}
+                                className="bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20 border border-indigo-500/20 rounded-xl h-12 px-6 font-bold"
+                            >
+                                Force Calm
+                            </Button>
+                            <Button
+                                onClick={() => forceMode("party")}
+                                disabled={isOverriding}
+                                className="bg-pink-500/10 text-pink-300 hover:bg-pink-500/20 border border-pink-500/20 rounded-xl h-12 px-6 font-bold"
+                            >
+                                Force Party
+                            </Button>
+                        </>
+                    )}
                     {!isSessionActive ? (
                         <Button onClick={startSession} className="bg-indigo-600 hover:bg-indigo-500 rounded-xl h-12 px-8 font-bold text-white shadow-lg shadow-indigo-600/20 text-lg">
                             <Play className="w-5 h-5 mr-2 fill-current" />
