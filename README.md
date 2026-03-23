@@ -11,9 +11,9 @@
 
 ## Screenshots
 
+![VenIQ landing](./docs/landing.jpg)
 ![VenIQ editor](./docs/editor1.jpg)
 ![VenIQ editor](./docs/editor2.jpg)
-![VenIQ landing](./docs/landing.jpg)
 
 ---
 
@@ -39,7 +39,7 @@ Browser webcam
         └── Yes → curated 30-track DB → Deezer preview → Tone.js crossfade
 ```
 
-**Change detection** uses a threshold + 30-second cooldown so jitter doesn't thrash the queue. **Tone.js** runs two Player nodes through independent Filter and Volume chains; crossfades are a randomly selected lowpass sweep, highpass sweep, or straight cut — both volume nodes ramp simultaneously, zero bleed.
+**Change detection** uses a threshold + 30-second cooldown so jitter doesn't kill the queue. **Tone.js** runs two Player nodes through independent Filter and Volume chains; crossfades are a randomly selected lowpass sweep, highpass sweep, or straight cut; both volume nodes ramp simultaneously without bleed.
 
 The DJ always has a manual override (`POST /api/playback/override`).
 
@@ -96,7 +96,7 @@ machacks-main/
 
 ---
 
-## Tech stack
+## Stack
 
 | | |
 |---|---|
@@ -110,4 +110,6 @@ machacks-main/
 
 ## Team
 
-Built at **MacHacks 2026** by [shaeshan kunalan](https://github.com/shaeshan2), Marco Dava, and [Midulan Mathinathan](https://github.com/midulan).
+Built at **MacHacks 2026** by [Shaeshan Kunalan](https://github.com/shaeshan2), [Marco Dava](https://github.com/MarcoDava), and [Midulan Mathinathan](https://github.com/midulan).
+
+Check out the Devpost [here](https://devpost.com/software/veniq)
