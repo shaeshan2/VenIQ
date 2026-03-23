@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
@@ -625,7 +626,7 @@ export default function LiveSessionPage() {
                                 </div>
                             )}
                         </div>
-                        <div className="flex items-center gap-2.5 sm:justify-end">
+                        <div className="flex items-center gap-2.5 border-t border-zinc-800/50 pt-3 sm:border-t-0 sm:pt-0 sm:justify-end">
                             {currentTrack?.cover_url && (
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img
@@ -643,10 +644,19 @@ export default function LiveSessionPage() {
                             </div>
                         </div>
                     </div>
-                    <p className="mt-3 border-t border-zinc-800/80 pt-3 text-sm leading-snug text-zinc-400">
-                        {isAnalyzing ? <span className="animate-pulse">…</span> : null}
-                        {liveDescription}
-                    </p>
+                    <AnimatePresence mode="wait">
+                        <motion.p
+                            key={liveDescription}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.25 }}
+                            className="mt-3 border-t border-zinc-800/80 pt-3 text-sm leading-snug text-zinc-400"
+                        >
+                            {isAnalyzing ? <span className="animate-pulse">…</span> : null}
+                            {liveDescription}
+                        </motion.p>
+                    </AnimatePresence>
                 </section>
 
                 {/* Player row — cover art + queue */}
@@ -681,9 +691,6 @@ export default function LiveSessionPage() {
                                     >
                                         Deezer
                                     </a>
-                                )}
-                                {!currentTrack.preview_url && (
-                                    <span className="text-xs text-amber-200/80">No preview found</span>
                                 )}
                             </div>
                         </div>
