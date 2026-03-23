@@ -348,12 +348,20 @@ export default function LiveSessionPage() {
 
     useEffect(() => {
         if (!isSessionActive) return;
-        runAnalysis();
+        // Delay first analysis slightly so webcam has time to initialise
+        const first = setTimeout(runAnalysis, 1500);
         intervalRef.current = setInterval(runAnalysis, CAPTURE_INTERVAL_MS);
         return () => {
+            clearTimeout(first);
             if (intervalRef.current) clearInterval(intervalRef.current);
         };
     }, [isSessionActive, runAnalysis]);
+
+    // Warm up Render on mount so it's ready before the user hits Start Session
+    useEffect(() => {
+        fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:5000"}/api/playback/current`)
+            .catch(() => { /* backend asleep or unreachable — that's fine */ });
+    }, []);
 
     // Cleanup on unmount
     useEffect(() => {
