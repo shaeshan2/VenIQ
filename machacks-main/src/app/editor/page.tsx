@@ -29,15 +29,10 @@ const EMOTION_CONFIG: Record<string, { emoji: string; color: string; label: stri
     calm:     { emoji: "🌊", color: "text-indigo-300",  label: "Calm"       },
 };
 
-// ─── Tone.js transition types ────────────────────────────────────────────────
+const XFADE_S = 1.4; // crossfade duration — short enough to feel decisive
 type FilterMode = "none" | "lowpass" | "highpass";
-
-function pickTransition(): { duration: number; filter: FilterMode } {
-    const duration = 2 + Math.random() * 3; // 2–5 s
-    const filter = (["none", "lowpass", "highpass"] as FilterMode[])[
-        Math.floor(Math.random() * 3)
-    ];
-    return { duration, filter };
+function pickFilterMode(): FilterMode {
+    return (["none", "lowpass", "highpass"] as FilterMode[])[Math.floor(Math.random() * 3)];
 }
 
 export default function LiveSessionPage() {
@@ -119,8 +114,10 @@ export default function LiveSessionPage() {
         return () => clearInterval(tick);
     }, [isAnalyzing, isSessionActive]);
 
-    // Keep currentMoodRef and currentTrackRef in sync for use inside timer callbacks
+    // Keep currentMoodRef, currentTrackRef, isAnalyzingRef in sync for timer/interval callbacks
     useEffect(() => { currentMoodRef.current = currentMood; }, [currentMood]);
+    const isAnalyzingRef = useRef(false);
+    useEffect(() => { isAnalyzingRef.current = isAnalyzing; }, [isAnalyzing]);
     const currentTrackRef = useRef<Track | null>(null);
     useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
 
@@ -213,7 +210,8 @@ export default function LiveSessionPage() {
         await incoming.load(previewUrl);
         incoming.loop = false;
 
-        incomingVol.volume.value = -80;
+        // Reset incoming: start at −18 dB so both tracks are audible from the first moment
+        incomingVol.volume.value = -18;
         incomingFilter.type = "lowpass";
         incomingFilter.frequency.value = 20000;
 
@@ -225,21 +223,23 @@ export default function LiveSessionPage() {
             return;
         }
 
-        const { duration, filter } = pickTransition();
-
-        if (filter === "lowpass") {
+        // Filter sweep on outgoing — runs in first 60% of the fade so it's
+        // clearly audible while the song still has volume
+        const filterMode = pickFilterMode();
+        if (filterMode === "lowpass") {
             outgoingFilter.type = "lowpass";
-            outgoingFilter.frequency.value = 20000;
-            outgoingFilter.frequency.rampTo(200, duration);
-        } else if (filter === "highpass") {
+            outgoingFilter.frequency.value = 18000;
+            outgoingFilter.frequency.rampTo(180, XFADE_S * 0.6);   // muffle outgoing
+        } else if (filterMode === "highpass") {
             outgoingFilter.type = "highpass";
             outgoingFilter.frequency.value = 20;
-            outgoingFilter.frequency.rampTo(4000, duration);
+            outgoingFilter.frequency.rampTo(4500, XFADE_S * 0.6);  // thin out bass
         }
 
+        // True crossfade: both players overlap; incoming already at −18 dB
         incoming.start();
-        incomingVol.volume.rampTo(0, duration);
-        outgoingVol.volume.rampTo(-80, duration);
+        incomingVol.volume.rampTo(0, XFADE_S);
+        outgoingVol.volume.rampTo(-80, XFADE_S);
 
         activeSide.current = side === 0 ? 1 : 0;
 
@@ -248,7 +248,7 @@ export default function LiveSessionPage() {
             outgoingVol.volume.value = -80;
             outgoingFilter.type = "lowpass";
             outgoingFilter.frequency.value = 20000;
-        }, (duration + 0.4) * 1000);
+        }, (XFADE_S + 0.3) * 1000);
     }, []);
 
     const loadTrack = useCallback(async (track: Track) => {
@@ -453,9 +453,37 @@ export default function LiveSessionPage() {
         // Delay first analysis slightly so webcam has time to initialise
         const first = setTimeout(runAnalysis, 1500);
         intervalRef.current = setInterval(runAnalysis, CAPTURE_INTERVAL_MS);
+
+        // Fast scene-change detector: checks every 2s, triggers immediate analysis
+        // when ≥20% of pixels shift (person enters/leaves, lights change, etc.)
+        const fastCheck = setInterval(() => {
+            if (isAnalyzingRef.current) return;
+            const video = videoRef.current;
+            if (!video || video.readyState < 2) return;
+            const sc = document.createElement("canvas");
+            sc.width = 32; sc.height = 32;
+            const ctx = sc.getContext("2d");
+            if (!ctx) return;
+            ctx.drawImage(video, 0, 0, 32, 32);
+            const newData = ctx.getImageData(0, 0, 32, 32).data;
+            const prev = prevFrameDataRef.current;
+            if (!prev) return;
+            let diff = 0;
+            for (let i = 0; i < newData.length; i += 4) {
+                if (Math.abs(newData[i] - prev[i]) + Math.abs(newData[i+1] - prev[i+1]) + Math.abs(newData[i+2] - prev[i+2]) > 30) diff++;
+            }
+            if (diff / 1024 >= 0.20) {
+                // Significant scene change — analyse now, then reset the regular interval
+                runAnalysis();
+                clearInterval(intervalRef.current!);
+                intervalRef.current = setInterval(runAnalysis, CAPTURE_INTERVAL_MS);
+            }
+        }, 2000);
+
         return () => {
             clearTimeout(first);
             if (intervalRef.current) clearInterval(intervalRef.current);
+            clearInterval(fastCheck);
         };
     }, [isSessionActive, runAnalysis]);
 

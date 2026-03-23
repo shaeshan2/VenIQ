@@ -21,7 +21,7 @@ from datetime import datetime
 from flask import Blueprint, request, jsonify, current_app
 from app.services.crowd import describe_crowd, describe_individual, analyze_auto
 from app.services.songs_db import get_song, find_best_match
-from app.services.deezer import search_deezer, fetch_chart_tracks, pick_genre_for_tags
+from app.services.deezer import search_deezer, fetch_chart_tracks, pick_genre_for_tags, search_by_mood
 from app.routes.playback import set_current_track
 from app import limiter
 
@@ -80,6 +80,14 @@ def _pick_track_from_charts(vibe_tags: list[str], recently_played: list[str], pr
     played_set = set(recently_played)
 
     if _is_study_vibe(vibe_tags):
+        # Determine best mood label for keyword search
+        mood = "focused"
+        if any(t in {"peaceful", "calm", "ambient", "tranquil", "soothing", "meditative", "still", "quiet"} for t in [v.lower() for v in vibe_tags]):
+            mood = "calm"
+        track = search_by_mood(mood, recently_played)
+        if track:
+            return track
+        # Fallback: curated static DB
         return _track_from_static_db(vibe_tags, recently_played)
 
     # Energetic/party/happy: mix charts with all-time classics

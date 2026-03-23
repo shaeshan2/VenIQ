@@ -153,6 +153,99 @@ def pick_genre_for_tags(vibe_tags: list[str], preferences: list[str] | None = No
     return votes.most_common(1)[0][0] if votes else GENRE_ALL
 
 
+# ── Keyword search cache: keyword → (timestamp, list[track_dict]) ────────────
+_keyword_cache: dict[str, tuple[float, list[dict]]] = {}
+
+# Mood → search query pool (one is picked at random per request for variety)
+_MOOD_KEYWORDS: dict[str, list[str]] = {
+    "focused": [
+        "lofi hip hop study",
+        "piano concentration focus",
+        "ambient focus instrumental",
+        "lo-fi beats study music",
+        "neoclassical piano focus",
+        "ambient electronic work",
+        "deep focus instrumental music",
+        "classical study concentration",
+    ],
+    "calm": [
+        "ambient peaceful relaxing",
+        "classical piano relaxation",
+        "neoclassical calm meditation",
+        "soft piano sleep relax",
+        "ambient atmospheric peaceful",
+        "acoustic guitar calm relaxing",
+        "nature sounds ambient calm",
+        "piano sleep meditation",
+    ],
+}
+
+
+def search_deezer_by_keyword(keyword: str, limit: int = 80) -> list[dict]:
+    """
+    Search Deezer for tracks matching a freetext keyword.
+    Returns up to `limit` tracks that have a preview URL.
+    Results are cached in memory for 1 hour (same TTL as chart cache).
+    """
+    import random as _random
+    now = time.time()
+    cached = _keyword_cache.get(keyword)
+    if cached and (now - cached[0] < _CACHE_TTL):
+        return cached[1]
+
+    try:
+        resp = requests.get(
+            _SEARCH_URL,
+            params={"q": keyword, "limit": limit},
+            timeout=8,
+        )
+        resp.raise_for_status()
+        tracks = [t for t in resp.json().get("data", []) if t.get("preview")]
+        # Shuffle once at cache-fill time so subsequent picks are truly random
+        _random.shuffle(tracks)
+        _keyword_cache[keyword] = (now, tracks)
+        return tracks
+    except Exception:
+        return []
+
+
+def search_by_mood(mood: str, recently_played: list[str] | None = None) -> dict | None:
+    """
+    Pick a random track from Deezer keyword search for the given mood.
+    Tries up to 3 different keywords (rotating for variety).
+    Returns a normalised track dict or None.
+    """
+    import random as _random
+    keywords = _MOOD_KEYWORDS.get(mood, [])
+    if not keywords:
+        return None
+
+    played_set = set(recently_played or [])
+    tried: set[str] = set()
+
+    for _ in range(min(3, len(keywords))):
+        keyword = _random.choice([k for k in keywords if k not in tried] or keywords)
+        tried.add(keyword)
+        tracks = search_deezer_by_keyword(keyword)
+        available = [t for t in tracks if str(t["id"]) not in played_set
+                     and f"{t['title']}|{t['artist']['name']}" not in played_set]
+        if available:
+            chosen = _random.choice(available)
+            return {
+                "name":        chosen["title"],
+                "artist":      chosen["artist"]["name"],
+                "preview_url": chosen["preview"],
+                "cover_url":   chosen["album"].get("cover_medium", ""),
+                "deezer_url":  chosen.get("link", ""),
+                "deezer_id":   chosen["id"],
+                "bpm":         None,
+                "key":         None,
+                "genre":       None,
+                "duration_s":  chosen.get("duration"),
+            }
+    return None
+
+
 # ── Chart cache: genre_id → (timestamp, list[track_dict]) ────────────────────
 _chart_cache: dict[int, tuple[float, list[dict]]] = {}
 _CACHE_TTL = 3600  # 1 hour
