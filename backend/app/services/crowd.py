@@ -142,7 +142,7 @@ def analyze_auto(image_b64: str, mediapipe: dict | None = None) -> dict:
         import google.generativeai as genai
 
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.5-flash")
+        model = genai.GenerativeModel("gemini-1.5-flash")
         image_bytes = base64.b64decode(image_b64)
 
         mp      = mediapipe or {}
@@ -235,7 +235,7 @@ def describe_individual(image_b64: str, mediapipe: dict | None = None) -> dict:
         import google.generativeai as genai
 
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.5-flash")
+        model = genai.GenerativeModel("gemini-1.5-flash")
         image_bytes = base64.b64decode(image_b64)
 
         mp      = mediapipe or {}
@@ -331,7 +331,7 @@ def _describe_scene(image_b64: str, mediapipe: dict | None = None) -> str:
         import google.generativeai as genai
 
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.5-flash")
+        model = genai.GenerativeModel("gemini-1.5-flash")
 
         image_bytes = base64.b64decode(image_b64)
 

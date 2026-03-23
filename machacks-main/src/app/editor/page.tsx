@@ -15,7 +15,7 @@ import {
 } from "@/lib/mediapipe-analyzer";
 import * as Tone from "tone";
 
-const CAPTURE_INTERVAL_MS = 3000;
+const CAPTURE_INTERVAL_MS = 10000;
 const QUEUE_PREFILL = 3;
 
 // Emotion → icon + color for Lock In mode
