@@ -394,7 +394,7 @@ export default function LiveSessionPage() {
             </div>
 
             {/* Header */}
-            <header className="sticky top-0 z-10 flex shrink-0 items-center justify-between border-b border-zinc-800/60 bg-zinc-950/75 px-4 py-3 backdrop-blur-md sm:px-6">
+            <header className="sticky top-0 z-10 relative flex shrink-0 items-center justify-between border-b border-zinc-800/60 bg-zinc-950/75 px-4 py-3 backdrop-blur-md sm:px-6">
                 <Link
                     href="/"
                     className="inline-flex items-center gap-2 text-sm font-medium text-zinc-400 transition hover:text-zinc-100"
@@ -402,7 +402,7 @@ export default function LiveSessionPage() {
                     <ChevronLeft className="h-4 w-4" />
                     Home
                 </Link>
-                <span className="bg-gradient-to-r from-violet-300 via-fuchsia-300 to-pink-300 bg-clip-text text-base font-black tracking-tight text-transparent">
+                <span className="absolute left-1/2 -translate-x-1/2 bg-gradient-to-r from-violet-300 via-fuchsia-300 to-pink-300 bg-clip-text text-base font-black tracking-tight text-transparent">
                     Ven<span className="text-white">IQ</span>
                 </span>
                 {/* Mode selector */}

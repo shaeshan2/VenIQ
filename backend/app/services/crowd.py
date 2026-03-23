@@ -150,17 +150,16 @@ def analyze_auto(image_b64: str, mediapipe: dict | None = None) -> dict:
         mp_line = f"\n\nAdditional sensor data from the browser: {mp_hint}" if mp_hint else ""
 
         prompt = (
-            "Analyze this webcam frame. First decide: is this ONE person working/studying alone, "
-            "or a GROUP of people?" + mp_line + """
+            "Analyze this webcam frame. Count the number of people visible." + mp_line + """
 
 Return ONLY a valid JSON object. Use one of these two schemas:
 
-If ONE person alone:
+If 1-4 people (small group or individual):
 {"scene_type":"study","description":"1-2 sentences: posture, expression, body language",
  "emotion":"focused|happy|tired|stressed","energy":5,"confidence":0.8,
  "coach_message":"1-2 sentence motivational or calming message"}
 
-If a GROUP (2+ people):
+If 5 or more people (large crowd):
 {"scene_type":"club","description":"1-2 sentences: group activity, body language, energy",
  "sentiment":"party|calm","energy":5,"confidence":0.8}
 

@@ -39,7 +39,7 @@ export async function initFaceLandmarker(): Promise<void> {
   faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
     baseOptions: { modelAssetPath: FACE_MODEL, delegate: "CPU" },
     runningMode: "VIDEO",
-    numFaces: 1,
+    numFaces: 4,
     minFaceDetectionConfidence: 0.5,
     minFacePresenceConfidence: 0.5,
     minTrackingConfidence: 0.5,
