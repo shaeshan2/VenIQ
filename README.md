@@ -1,4 +1,4 @@
-# VenIQ
+# [VenIQ](https://veniq.vercel.app/)
 
 **Crowd-aware music that adapts in real time.** A webcam watches the room; Gemini reads the scene; the right track plays. Built at MacHacks 2026.
 
@@ -6,6 +6,10 @@
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js)](https://nextjs.org)
 [![Flask](https://img.shields.io/badge/Flask-3.0-lightgrey?style=flat-square&logo=flask)](https://flask.palletsprojects.com)
 [![Gemini](https://img.shields.io/badge/Gemini-2.5_Flash-4285F4?style=flat-square&logo=google)](https://deepmind.google/technologies/gemini)
+
+---
+
+Live Demo: https://veniq.vercel.app/ 
 
 ---
 
