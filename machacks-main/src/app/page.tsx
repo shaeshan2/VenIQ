@@ -236,6 +236,25 @@ function FeaturesSection() {
   );
 }
 
+const AnimatedEqualizer = () => {
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
+  if (!mounted) return null;
+  return (
+    <div className="absolute bottom-0 left-0 right-0 h-full flex items-end justify-between px-2 opacity-60 pointer-events-none z-0 overflow-hidden">
+      {Array.from({ length: 40 }).map((_, i) => (
+        <motion.div
+          key={i}
+          className="w-[2%] mx-[0.5%] bg-gradient-to-t from-indigo-500 via-purple-500 to-fuchsia-500 rounded-t-full shadow-[0_0_30px_rgba(168,85,247,0.4)]"
+          animate={{ height: ["20%", `${40 + (i * 37 + 13) % 60}%`, "10%", `${20 + (i * 53 + 7) % 70}%`, "30%"] }}
+          transition={{ duration: 2 + (i % 5) * 0.6, repeat: Infinity, repeatType: "mirror", ease: "easeInOut", delay: (i % 7) * 0.28 }}
+          style={{ height: "20%" }}
+        />
+      ))}
+    </div>
+  );
+};
+
 export default function LandingPage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -334,10 +353,6 @@ export default function LandingPage() {
             primary: {
               text: "Start Session",
               onClick: () => router.push('/editor')
-            },
-            secondary: {
-              text: "Learn More",
-              onClick: () => console.log("Watch Demo")
             }
           }}
         />
@@ -432,25 +447,6 @@ export default function LandingPage() {
             </div>
           </div>
         </section>
-
-const AnimatedEqualizer = () => {
-  const [mounted, setMounted] = React.useState(false);
-  React.useEffect(() => setMounted(true), []);
-  if (!mounted) return null;
-  return (
-    <div className="absolute bottom-0 left-0 right-0 h-full flex items-end justify-between px-2 opacity-60 pointer-events-none z-0 overflow-hidden">
-      {Array.from({ length: 40 }).map((_, i) => (
-        <motion.div
-          key={i}
-          className="w-[2%] mx-[0.5%] bg-gradient-to-t from-indigo-500 via-purple-500 to-fuchsia-500 rounded-t-full shadow-[0_0_30px_rgba(168,85,247,0.4)]"
-          animate={{ height: ["20%", `${40 + (i * 37 + 13) % 60}%`, "10%", `${20 + (i * 53 + 7) % 70}%`, "30%"] }}
-          transition={{ duration: 2 + (i % 5) * 0.6, repeat: Infinity, repeatType: "mirror", ease: "easeInOut", delay: (i % 7) * 0.28 }}
-          style={{ height: "20%" }}
-        />
-      ))}
-    </div>
-  );
-};
 
         {/* Final CTA */}
         <section className="w-full py-40 flex flex-col items-center text-center border-t border-white/5 bg-[radial-gradient(circle_at_50%_50%,rgba(99,102,241,0.05),transparent)] relative z-10">

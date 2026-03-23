@@ -7,6 +7,9 @@ gunicorn==23.0.0
 # AI — crowd scene analysis
 groq>=0.11.0
 
+# Rate limiting
+flask-limiter>=3.5.0
+
 # Testing
 pytest==8.2.2
 pytest-flask==1.3.0

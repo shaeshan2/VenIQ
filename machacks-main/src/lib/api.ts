@@ -65,11 +65,11 @@ export async function clearHistory(): Promise<void> {
   await fetch(`${BASE_URL}/api/crowd/history`, { method: "DELETE" });
 }
 
-export async function overrideSentiment(sentiment: string): Promise<Track | null> {
+export async function overrideSentiment(sentiment: string, excludeId?: string | number): Promise<Track | null> {
   const res = await fetch(`${BASE_URL}/api/playback/override`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sentiment }),
+    body: JSON.stringify({ sentiment, exclude_id: excludeId ?? null }),
   });
   if (!res.ok) return null;
   const data = await res.json();

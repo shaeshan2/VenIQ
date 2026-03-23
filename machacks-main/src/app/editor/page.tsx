@@ -74,7 +74,7 @@ export default function LiveSessionPage() {
     const [stream, setStream] = useState<MediaStream | null>(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [isOverriding, setIsOverriding] = useState(false);
-    const [overrideLock, setOverrideLock] = useState<"party" | "calm" | null>(null);
+    const [overrideLock, setOverrideLock] = useState<"party" | "calm" | "focused" | "happy" | null>(null);
 
     const [currentMood,       setCurrentMood]       = useState<string>("None");
     const [currentConfidence, setCurrentConfidence] = useState<number | null>(null);
@@ -103,8 +103,10 @@ export default function LiveSessionPage() {
         return () => clearInterval(tick);
     }, [isAnalyzing, isSessionActive]);
 
-    // Keep currentMoodRef in sync for use inside timer callbacks
+    // Keep currentMoodRef and currentTrackRef in sync for use inside timer callbacks
     useEffect(() => { currentMoodRef.current = currentMood; }, [currentMood]);
+    const currentTrackRef = useRef<Track | null>(null);
+    useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
 
     // Flash when mood changes
     const prevMoodRef = useRef(currentMood);
@@ -243,7 +245,8 @@ export default function LiveSessionPage() {
                 const mood = currentMoodRef.current;
                 if (!mood || mood === "None" || mood === "Scanning…") return;
                 try {
-                    const next = await overrideSentiment(mood);
+                    const excludeId = currentTrackRef.current?.deezer_id ?? currentTrackRef.current?.preview_url ?? undefined;
+                    const next = await overrideSentiment(mood, excludeId);
                     if (next) await loadTrackRef.current?.(next);
                 } catch { /* ignore — next interval will retry */ }
             }, 28000);
@@ -303,9 +306,18 @@ export default function LiveSessionPage() {
         setIsAnalyzing(true);
         setLiveDescription("Scanning…");
         try {
-            const mpCtx = mpFeaturesRef.current
-                ? { ...(mpFeaturesRef.current as import("@/lib/api").MediaPipeContext) }
-                : undefined;
+            // Map camelCase FaceFeatures / PoseFeatures to snake_case MediaPipeContext
+            let mpCtx: import("@/lib/api").MediaPipeContext | undefined;
+            if (mpFeaturesRef.current) {
+                const mp = mpFeaturesRef.current;
+                if ("eyeOpenness" in mp) {
+                    const f = mp as FaceFeatures;
+                    mpCtx = { face_detected: f.detected, eye_openness: f.eyeOpenness, smile_score: f.smileScore, brow_furrow: f.browFurrow, suggested_emotion: f.suggestedEmotion };
+                } else {
+                    const p = mp as PoseFeatures;
+                    mpCtx = { person_count: p.personCount, hands_raised: p.handsRaisedCount, suggested_mode: p.suggestedMode };
+                }
+            }
             const result = await analyzeFrame(frame, appMode, mpCtx);
             setCurrentMood(result.sentiment ?? "Unknown");
             setCurrentConfidence(result.confidence ?? null);
@@ -381,7 +393,7 @@ export default function LiveSessionPage() {
         stopMpLoop();
     };
 
-    const forceMode = async (mode: "party" | "calm") => {
+    const forceMode = async (mode: "party" | "calm" | "focused" | "happy") => {
         if (autoNextTimerRef.current) { clearTimeout(autoNextTimerRef.current); autoNextTimerRef.current = null; }
         setIsOverriding(true);
         try {
@@ -499,7 +511,7 @@ export default function LiveSessionPage() {
                             appMode === "club" ? "bg-pink-500/20 text-pink-300" : "text-white/40 hover:text-white/60"
                         }`}
                     >
-                        {appMode === "club" ? "🔒 Club" : "Club"}
+                        {appMode === "club" ? "🔒 Crowd" : "Crowd"}
                     </button>
                     <button
                         onClick={() => setAppMode(appMode === "study" ? "auto" : "study")}
@@ -507,7 +519,7 @@ export default function LiveSessionPage() {
                             appMode === "study" ? "bg-blue-500/20 text-blue-300" : "text-white/40 hover:text-white/60"
                         }`}
                     >
-                        {appMode === "study" ? "🔒 Lock In" : "Lock In"}
+                        {appMode === "study" ? "🔒 Solo" : "Solo"}
                     </button>
                 </div>
             </header>
@@ -805,41 +817,46 @@ export default function LiveSessionPage() {
                     {isSessionActive && (
                         <div className="flex flex-wrap gap-2">
                             {overrideLock ? (
-                                <Button
-                                    type="button"
-                                    onClick={clearOverride}
-                                    className={`touch-manipulation rounded-lg font-semibold active:scale-95 ${
-                                        overrideLock === "party"
-                                            ? "bg-fuchsia-950/50 text-fuchsia-200 ring-1 ring-fuchsia-500/40 hover:bg-fuchsia-950/70"
-                                            : "bg-sky-950/50 text-sky-200 ring-1 ring-sky-500/40 hover:bg-sky-950/70"
-                                    }`}
-                                >
-                                    <Lock className="mr-2 h-4 w-4" />
-                                    Release · {overrideLock}
-                                </Button>
-                            ) : (
                                 <>
                                     <Button
                                         type="button"
-                                        onClick={() => forceMode("calm")}
-                                        disabled={isOverriding}
-                                        variant="outline"
-                                        className="touch-manipulation rounded-lg border-sky-500/30 font-semibold text-sky-200 active:scale-95 hover:bg-sky-950/40"
+                                        onClick={clearOverride}
+                                        className="touch-manipulation rounded-lg bg-white/10 font-semibold text-white/80 ring-1 ring-white/20 active:scale-95 hover:bg-white/15"
                                     >
-                                        <Unlock className="mr-2 h-4 w-4" />
-                                        Force calm
+                                        <Lock className="mr-2 h-4 w-4" />
+                                        Release · {overrideLock}
                                     </Button>
                                     <Button
                                         type="button"
-                                        onClick={() => forceMode("party")}
+                                        onClick={() => forceMode(overrideLock)}
                                         disabled={isOverriding}
                                         variant="outline"
-                                        className="touch-manipulation rounded-lg border-fuchsia-500/30 font-semibold text-fuchsia-200 active:scale-95 hover:bg-fuchsia-950/40"
+                                        className="touch-manipulation rounded-lg border-zinc-600 font-semibold text-zinc-300 active:scale-95 hover:bg-zinc-800"
                                     >
-                                        <Unlock className="mr-2 h-4 w-4" />
-                                        Force party
+                                        <SkipForward className="mr-1.5 h-4 w-4" />
+                                        Next track
                                     </Button>
                                 </>
+                            ) : (
+                                <div className="flex flex-wrap gap-1.5">
+                                    {([
+                                        { mode: "calm",    label: "🌊 Calm",  cls: "border-sky-500/30 text-sky-200 hover:bg-sky-950/40" },
+                                        { mode: "focused", label: "🎯 Focus", cls: "border-blue-500/30 text-blue-200 hover:bg-blue-950/40" },
+                                        { mode: "happy",   label: "😊 Happy", cls: "border-yellow-500/30 text-yellow-200 hover:bg-yellow-950/40" },
+                                        { mode: "party",   label: "🔥 Party", cls: "border-fuchsia-500/30 text-fuchsia-200 hover:bg-fuchsia-950/40" },
+                                    ] as const).map(({ mode, label, cls }) => (
+                                        <Button
+                                            key={mode}
+                                            type="button"
+                                            onClick={() => forceMode(mode)}
+                                            disabled={isOverriding}
+                                            variant="outline"
+                                            className={`touch-manipulation rounded-lg font-semibold active:scale-95 ${cls}`}
+                                        >
+                                            {label}
+                                        </Button>
+                                    ))}
+                                </div>
                             )}
                         </div>
                     )}
