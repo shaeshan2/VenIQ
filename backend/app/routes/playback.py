@@ -15,6 +15,11 @@ playback_bp = Blueprint("playback", __name__)
 
 _current: dict = {"track": None, "source": None}  # source: "auto" | "override"
 
+# Persistent history for override picks — prevents cycling between the same few songs.
+# Stores "name|artist" strings (compatible with find_best_match key format).
+_override_played: list[str] = []
+_OVERRIDE_HISTORY_MAX = 30
+
 # Sentiment → vibe_tags for override requests
 _SENTIMENT_TAGS = {
     "party":   ["energetic", "dancing", "electronic", "euphoric", "rave"],
@@ -56,11 +61,10 @@ def override():
 
         # Calm / focused: use curated static DB (better study/ambient music than charts)
         if sentiment in ("calm", "focused"):
-            recently = [exclude_id] if exclude_id else []
-            song = find_best_match(vibe_tags, recently)
+            song = find_best_match(vibe_tags, _override_played)
             if not song:
                 energy = 3 if sentiment == "calm" else 5
-                song = get_song(sentiment, energy)
+                song = get_song(sentiment, energy, _override_played)
             if not song:
                 return jsonify({"error": "No tracks found for that sentiment"}), 404
             dz = search_deezer(song["name"], song["artist"])
@@ -78,15 +82,19 @@ def override():
             }
         else:
             # Party / happy: mix current charts (70%) with all-time classics from static DB (30%)
+            # Build a played set that works for both chart IDs and static DB name|artist keys
+            played_ids   = {k for k in _override_played if "|" not in k}
+            played_names = {k for k in _override_played if "|"     in k}
+
             use_static = random.random() < 0.30
             track = None
 
             if not use_static:
-                genre_id    = pick_genre_for_tags(vibe_tags, preferences)
+                genre_id     = pick_genre_for_tags(vibe_tags, preferences)
                 chart_tracks = fetch_chart_tracks(genre_id, limit=100) or fetch_chart_tracks(0, limit=100)
                 if chart_tracks:
-                    pool = [t for t in chart_tracks[:30] if exclude_id is None or str(t["id"]) != exclude_id]
-                    pool = pool or chart_tracks[:30]
+                    pool = [t for t in chart_tracks[:30] if str(t["id"]) not in played_ids]
+                    pool = pool or chart_tracks[:30]  # ignore history if fully exhausted
                     chosen = random.choice(pool)
                     track = {
                         "name":        chosen["title"],
@@ -102,12 +110,11 @@ def override():
                     }
 
             if track is None:
-                # Static DB classic
-                recently = [exclude_id] if exclude_id else []
-                song = find_best_match(vibe_tags, recently)
+                # Static DB classic — pass name|artist history so find_best_match can exclude them
+                song = find_best_match(vibe_tags, list(played_names))
                 if not song:
                     energy = {"party": 8, "happy": 7}.get(sentiment, 5)
-                    song = get_song(sentiment, energy)
+                    song = get_song(sentiment, energy, list(played_names))
                 if not song:
                     return jsonify({"error": "No tracks found for that sentiment"}), 404
                 dz = search_deezer(song["name"], song["artist"])
@@ -125,6 +132,15 @@ def override():
                 }
     else:
         return jsonify({"error": "Provide 'track' or 'sentiment'"}), 400
+
+    # Record in persistent history using both key formats
+    name_key = f"{track['name']}|{track['artist']}"
+    id_key   = str(track.get("deezer_id") or "")
+    for key in filter(None, [name_key, id_key]):
+        if key not in _override_played:
+            _override_played.append(key)
+    while len(_override_played) > _OVERRIDE_HISTORY_MAX:
+        _override_played.pop(0)
 
     set_current_track(track, source="override")
     return jsonify({"track": track, "source": "override"})
