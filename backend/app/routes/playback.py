@@ -8,7 +8,7 @@ POST /api/playback/override  → DJ manually picks a different song
 import random
 from flask import Blueprint, request, jsonify
 from app.services.deezer import fetch_chart_tracks, pick_genre_for_tags, search_deezer, search_by_mood
-from app.services.songs_db import get_song, find_best_match
+from app.services.songs_db import get_song
 from app import limiter
 
 playback_bp = Blueprint("playback", __name__)
@@ -59,30 +59,11 @@ def override():
         preferences = data.get("preferences") or []
         vibe_tags   = _SENTIMENT_TAGS.get(sentiment, ["upbeat", "feel-good"])
 
-        # Calm / focused: Deezer keyword search (huge variety) → static DB fallback
+        # Calm / focused: Deezer keyword search across 4 genre-diverse queries
         if sentiment in ("calm", "focused"):
             track = search_by_mood(sentiment, _override_played)
             if not track:
-                # Static DB fallback
-                song = find_best_match(vibe_tags, _override_played)
-                if not song:
-                    energy = 3 if sentiment == "calm" else 5
-                    song = get_song(sentiment, energy, _override_played)
-                if not song:
-                    return jsonify({"error": "No tracks found for that sentiment"}), 404
-                dz = search_deezer(song["name"], song["artist"])
-                track = {
-                    "name":        song["name"],
-                    "artist":      song["artist"],
-                    "bpm":         song["bpm"],
-                    "key":         song["key"],
-                    "genre":       song["genre"],
-                    "duration_s":  song["duration_s"],
-                    "preview_url": dz["preview_url"] if dz else None,
-                    "deezer_url":  dz["deezer_url"]  if dz else None,
-                    "deezer_id":   dz["deezer_id"]   if dz else None,
-                    "cover_url":   dz["cover_url"]   if dz else None,
-                }
+                return jsonify({"error": "No tracks found — Deezer may be unreachable"}), 503
         else:
             # Party / happy: mix current charts (70%) with all-time classics from static DB (30%)
             # Build a played set that works for both chart IDs and static DB name|artist keys

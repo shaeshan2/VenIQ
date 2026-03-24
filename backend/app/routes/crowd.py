@@ -20,8 +20,7 @@ import time
 from datetime import datetime
 from flask import Blueprint, request, jsonify, current_app
 from app.services.crowd import describe_crowd, describe_individual, analyze_auto
-from app.services.songs_db import get_song, find_best_match
-from app.services.deezer import search_deezer, fetch_chart_tracks, pick_genre_for_tags, search_by_mood
+from app.services.deezer import fetch_chart_tracks, pick_genre_for_tags, search_by_mood
 from app.routes.playback import set_current_track
 from app import limiter
 
@@ -51,25 +50,6 @@ def _is_study_vibe(vibe_tags: list[str]) -> bool:
     return any(t.lower() in _STUDY_TAGS for t in vibe_tags)
 
 
-def _track_from_static_db(vibe_tags: list[str], recently_played: list[str]) -> dict | None:
-    """Pick from the curated static DB and enrich with Deezer preview URL."""
-    song = find_best_match(vibe_tags, recently_played) if vibe_tags else get_song("calm", 3, recently_played)
-    if not song:
-        return None
-    dz = search_deezer(song["name"], song["artist"])
-    return {
-        "name":        song["name"],
-        "artist":      song["artist"],
-        "bpm":         song["bpm"],
-        "key":         song["key"],
-        "genre":       song["genre"],
-        "duration_s":  song["duration_s"],
-        "preview_url": dz["preview_url"] if dz else None,
-        "deezer_url":  dz["deezer_url"]  if dz else None,
-        "deezer_id":   dz["deezer_id"]   if dz else None,
-        "cover_url":   dz["cover_url"]   if dz else None,
-    }
-
 
 def _pick_track_from_charts(vibe_tags: list[str], recently_played: list[str], preferences: list[str] | None = None) -> dict | None:
     """
@@ -80,45 +60,32 @@ def _pick_track_from_charts(vibe_tags: list[str], recently_played: list[str], pr
     played_set = set(recently_played)
 
     if _is_study_vibe(vibe_tags):
-        # Determine best mood label for keyword search
-        mood = "focused"
-        if any(t in {"peaceful", "calm", "ambient", "tranquil", "soothing", "meditative", "still", "quiet"} for t in [v.lower() for v in vibe_tags]):
-            mood = "calm"
-        track = search_by_mood(mood, recently_played)
-        if track:
-            return track
-        # Fallback: curated static DB
-        return _track_from_static_db(vibe_tags, recently_played)
+        mood = "calm" if any(
+            t in {"peaceful", "calm", "ambient", "tranquil", "soothing", "meditative", "still", "quiet"}
+            for t in [v.lower() for v in vibe_tags]
+        ) else "focused"
+        return search_by_mood(mood, recently_played)  # None → caller handles
 
-    # Energetic/party/happy: mix charts with all-time classics
-    use_static = random.random() < 0.30
-    if not use_static:
-        genre_id    = pick_genre_for_tags(vibe_tags, preferences) if vibe_tags else 0
-        chart_tracks = fetch_chart_tracks(genre_id, limit=100)
-        available   = [t for t in chart_tracks if str(t["id"]) not in played_set]
+    # Energetic/party/happy: Deezer charts, pick from full available pool
+    genre_id    = pick_genre_for_tags(vibe_tags, preferences) if vibe_tags else 0
+    chart_tracks = fetch_chart_tracks(genre_id, limit=100) or fetch_chart_tracks(0, limit=100)
+    available   = [t for t in chart_tracks if str(t["id"]) not in played_set] or chart_tracks
 
-        if not available:
-            chart_tracks = fetch_chart_tracks(0, limit=100)
-            available = [t for t in chart_tracks if str(t["id"]) not in played_set]
-
-        if available:
-            pool   = available[:min(30, len(available))]
-            chosen = random.choice(pool)
-            return {
-                "name":        chosen["title"],
-                "artist":      chosen["artist"]["name"],
-                "preview_url": chosen["preview"],
-                "cover_url":   chosen["album"].get("cover_medium", ""),
-                "deezer_url":  chosen.get("link", ""),
-                "deezer_id":   chosen["id"],
-                "bpm":         None,
-                "key":         None,
-                "genre":       None,
-                "duration_s":  chosen.get("duration"),
-            }
-
-    # Static DB classic (also the fallback if charts fail)
-    return _track_from_static_db(vibe_tags, recently_played)
+    if available:
+        chosen = random.choice(available)
+        return {
+            "name":        chosen["title"],
+            "artist":      chosen["artist"]["name"],
+            "preview_url": chosen["preview"],
+            "cover_url":   chosen["album"].get("cover_medium", ""),
+            "deezer_url":  chosen.get("link", ""),
+            "deezer_id":   chosen["id"],
+            "bpm":         None,
+            "key":         None,
+            "genre":       None,
+            "duration_s":  chosen.get("duration"),
+        }
+    return None
 
 
 @crowd_bp.route("/analyze", methods=["POST"])

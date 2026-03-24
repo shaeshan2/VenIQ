@@ -156,38 +156,42 @@ def pick_genre_for_tags(vibe_tags: list[str], preferences: list[str] | None = No
 # ── Keyword search cache: keyword → (timestamp, list[track_dict]) ────────────
 _keyword_cache: dict[str, tuple[float, list[dict]]] = {}
 
-# Mood → search query pool (one is picked at random per request for variety)
+# Mood → genre-diverse keyword pools.
+# Keys are intentionally from different genres so merged results cover wide ground.
 _MOOD_KEYWORDS: dict[str, list[str]] = {
     "focused": [
-        "lofi hip hop study",
-        "piano concentration focus",
-        "ambient focus instrumental",
-        "lo-fi beats study music",
-        "neoclassical piano focus",
-        "ambient electronic work",
-        "deep focus instrumental music",
-        "classical study concentration",
+        "lofi hip hop",           # lo-fi / beats
+        "piano study classical",  # classical piano
+        "post rock instrumental", # Mogwai / Explosions in the Sky territory
+        "trip hop instrumental",  # Portishead / Massive Attack
+        "ambient electronic",     # Brian Eno / Moby
+        "indie folk acoustic",    # Jose Gonzalez / Nick Drake
+        "jazz instrumental chill",# Miles Davis / Bill Evans
+        "chillwave downtempo",    # Washed Out / Toro y Moi
+        "neoclassical piano",     # Einaudi / Max Richter
+        "deep focus beats",       # modern lo-fi producers
     ],
     "calm": [
-        "ambient peaceful relaxing",
-        "classical piano relaxation",
-        "neoclassical calm meditation",
-        "soft piano sleep relax",
-        "ambient atmospheric peaceful",
-        "acoustic guitar calm relaxing",
-        "nature sounds ambient calm",
-        "piano sleep meditation",
+        "ambient relaxing",
+        "classical piano peaceful",
+        "acoustic guitar relaxing",
+        "jazz ballad soft",
+        "sleep music gentle",
+        "nature ambient sounds",
+        "new age meditation",
+        "singer songwriter soft",
+        "chillout downtempo",
+        "piano ballad emotional",
     ],
 }
 
 
-def search_deezer_by_keyword(keyword: str, limit: int = 80) -> list[dict]:
+def search_deezer_by_keyword(keyword: str, limit: int = 100) -> list[dict]:
     """
     Search Deezer for tracks matching a freetext keyword.
     Returns up to `limit` tracks that have a preview URL.
-    Results are cached in memory for 1 hour (same TTL as chart cache).
+    Results are cached in memory for 1 hour.
     """
-    import random as _random
     now = time.time()
     cached = _keyword_cache.get(keyword)
     if cached and (now - cached[0] < _CACHE_TTL):
@@ -201,8 +205,6 @@ def search_deezer_by_keyword(keyword: str, limit: int = 80) -> list[dict]:
         )
         resp.raise_for_status()
         tracks = [t for t in resp.json().get("data", []) if t.get("preview")]
-        # Shuffle once at cache-fill time so subsequent picks are truly random
-        _random.shuffle(tracks)
         _keyword_cache[keyword] = (now, tracks)
         return tracks
     except Exception:
@@ -211,9 +213,12 @@ def search_deezer_by_keyword(keyword: str, limit: int = 80) -> list[dict]:
 
 def search_by_mood(mood: str, recently_played: list[str] | None = None) -> dict | None:
     """
-    Pick a random track from Deezer keyword search for the given mood.
-    Tries up to 3 different keywords (rotating for variety).
-    Returns a normalised track dict or None.
+    Build a large, genre-diverse candidate pool by sampling 4 random keywords
+    for the mood, merging and deduplicating all results, then picking a random
+    track that hasn't been played recently.
+
+    Using 4 keywords × ~100 results each gives ~200-350 unique tracks after
+    dedup, drastically reducing repeats compared to a single-keyword approach.
     """
     import random as _random
     keywords = _MOOD_KEYWORDS.get(mood, [])
@@ -221,29 +226,44 @@ def search_by_mood(mood: str, recently_played: list[str] | None = None) -> dict 
         return None
 
     played_set = set(recently_played or [])
-    tried: set[str] = set()
 
-    for _ in range(min(3, len(keywords))):
-        keyword = _random.choice([k for k in keywords if k not in tried] or keywords)
-        tried.add(keyword)
-        tracks = search_deezer_by_keyword(keyword)
-        available = [t for t in tracks if str(t["id"]) not in played_set
-                     and f"{t['title']}|{t['artist']['name']}" not in played_set]
-        if available:
-            chosen = _random.choice(available)
-            return {
-                "name":        chosen["title"],
-                "artist":      chosen["artist"]["name"],
-                "preview_url": chosen["preview"],
-                "cover_url":   chosen["album"].get("cover_medium", ""),
-                "deezer_url":  chosen.get("link", ""),
-                "deezer_id":   chosen["id"],
-                "bpm":         None,
-                "key":         None,
-                "genre":       None,
-                "duration_s":  chosen.get("duration"),
-            }
-    return None
+    # Sample 4 distinct keywords (covers multiple genres)
+    sample = _random.sample(keywords, min(4, len(keywords)))
+
+    seen_ids: set = set()
+    merged: list[dict] = []
+    for kw in sample:
+        for t in search_deezer_by_keyword(kw):
+            if t["id"] not in seen_ids:
+                seen_ids.add(t["id"])
+                merged.append(t)
+
+    # Filter recently played, then pick randomly from what's left
+    available = [
+        t for t in merged
+        if str(t["id"]) not in played_set
+        and f"{t['title']}|{t['artist']['name']}" not in played_set
+    ]
+    if not available:
+        available = merged  # played everything? reset and allow repeats
+
+    if not available:
+        return None
+
+    _random.shuffle(available)
+    chosen = available[0]
+    return {
+        "name":        chosen["title"],
+        "artist":      chosen["artist"]["name"],
+        "preview_url": chosen["preview"],
+        "cover_url":   chosen["album"].get("cover_medium", ""),
+        "deezer_url":  chosen.get("link", ""),
+        "deezer_id":   chosen["id"],
+        "bpm":         None,
+        "key":         None,
+        "genre":       None,
+        "duration_s":  chosen.get("duration"),
+    }
 
 
 # ── Chart cache: genre_id → (timestamp, list[track_dict]) ────────────────────
