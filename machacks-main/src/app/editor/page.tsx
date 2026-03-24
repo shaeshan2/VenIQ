@@ -840,81 +840,117 @@ export default function LiveSessionPage() {
                     )}
                 </section>
 
-                {/* Controls */}
+                {/* Pre-session: taste + big centred Go Live */}
+                {!isSessionActive && (
+                    <section className="flex flex-col items-center gap-6 py-4">
+                        {/* Taste pills — always visible before starting */}
+                        <div className="w-full">
+                            <p className="mb-2 text-center text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                                Your taste
+                                {genrePrefs.length > 0 && <span className="ml-1.5 text-violet-400">· {genrePrefs.length} selected</span>}
+                            </p>
+                            <div className="flex flex-wrap justify-center gap-2">
+                                {([
+                                    { id: "electronic", label: "⚡ Electronic" },
+                                    { id: "hip-hop",    label: "🎤 Hip-Hop"   },
+                                    { id: "pop",        label: "🎵 Pop"       },
+                                    { id: "r-n-b",      label: "🎷 R&B"       },
+                                    { id: "rock",       label: "🎸 Rock"      },
+                                    { id: "classical",  label: "🎹 Classical"  },
+                                ] as const).map(({ id, label }) => (
+                                    <button
+                                        key={id}
+                                        type="button"
+                                        onClick={() => toggleGenre(id)}
+                                        className={`rounded-full border px-4 py-1.5 text-sm font-medium transition-colors ${
+                                            genrePrefs.includes(id)
+                                                ? "border-violet-500 bg-violet-950/60 text-violet-200"
+                                                : "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-300"
+                                        }`}
+                                    >
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Big centred Go Live */}
+                        <div className="relative">
+                            <span className="absolute -inset-2 rounded-2xl bg-violet-500/20 animate-ping" />
+                            <Button
+                                onClick={startSession}
+                                className="relative touch-manipulation rounded-2xl bg-violet-600 px-12 py-4 text-lg font-bold text-white shadow-xl shadow-violet-900/50 active:scale-95 hover:bg-violet-500 hover:shadow-violet-700/60 transition-all"
+                            >
+                                <Play className="mr-2.5 h-6 w-6 fill-current" />
+                                Go live
+                            </Button>
+                        </div>
+                    </section>
+                )}
+
+                {/* Active session controls */}
+                {isSessionActive && (
                 <section className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                     <div className="flex flex-wrap gap-2">
-                        {!isSessionActive ? (
-                            <div className="relative w-full sm:w-auto">
-                                <span className="absolute -inset-1 rounded-xl bg-violet-500/40 animate-ping" />
-                                <Button
-                                    onClick={startSession}
-                                    className="relative w-full touch-manipulation rounded-xl bg-violet-600 px-8 py-3 text-base font-bold text-white shadow-lg shadow-violet-900/50 active:scale-95 hover:bg-violet-500 hover:shadow-violet-700/60 transition-all sm:w-auto"
-                                >
-                                    <Play className="mr-2 h-5 w-5 fill-current" />
-                                    Go live
-                                </Button>
-                            </div>
-                        ) : (
-                            <Button
-                                onClick={stopSession}
-                                variant="outline"
-                                className="w-full touch-manipulation rounded-lg border-red-500/40 bg-red-950/30 font-semibold text-red-200 active:scale-95 hover:bg-red-950/50 sm:w-auto"
-                            >
-                                <Square className="mr-2 h-4 w-4 fill-current" />
-                                End session
-                            </Button>
-                        )}
+                        <Button
+                            onClick={stopSession}
+                            variant="outline"
+                            className="w-full touch-manipulation rounded-lg border-red-500/40 bg-red-950/30 font-semibold text-red-200 active:scale-95 hover:bg-red-950/50 sm:w-auto"
+                        >
+                            <Square className="mr-2 h-4 w-4 fill-current" />
+                            End session
+                        </Button>
                     </div>
-                    {isSessionActive && (
-                        <div className="flex flex-wrap gap-2">
-                            {overrideLock ? (
-                                <>
+                    <div className="flex flex-wrap gap-2">
+                        {overrideLock ? (
+                            <>
+                                <Button
+                                    type="button"
+                                    onClick={clearOverride}
+                                    className="touch-manipulation rounded-lg bg-white/10 font-semibold text-white/80 ring-1 ring-white/20 active:scale-95 hover:bg-white/15"
+                                >
+                                    <Lock className="mr-2 h-4 w-4" />
+                                    Release · {overrideLock}
+                                </Button>
+                                <Button
+                                    type="button"
+                                    onClick={() => forceMode(overrideLock)}
+                                    disabled={isOverriding}
+                                    variant="outline"
+                                    className="touch-manipulation rounded-lg border-zinc-600 font-semibold text-zinc-300 active:scale-95 hover:bg-zinc-800"
+                                >
+                                    <SkipForward className="mr-1.5 h-4 w-4" />
+                                    Next track
+                                </Button>
+                            </>
+                        ) : (
+                            <div className="flex flex-wrap gap-1.5">
+                                {([
+                                    { mode: "calm",    label: "🌊 Calm",  cls: "border-sky-500/30 text-sky-200 hover:bg-sky-950/40" },
+                                    { mode: "focused", label: "🎯 Focus", cls: "border-blue-500/30 text-blue-200 hover:bg-blue-950/40" },
+                                    { mode: "happy",   label: "😊 Happy", cls: "border-yellow-500/30 text-yellow-200 hover:bg-yellow-950/40" },
+                                    { mode: "party",   label: "🔥 Party", cls: "border-fuchsia-500/30 text-fuchsia-200 hover:bg-fuchsia-950/40" },
+                                ] as const).map(({ mode, label, cls }) => (
                                     <Button
+                                        key={mode}
                                         type="button"
-                                        onClick={clearOverride}
-                                        className="touch-manipulation rounded-lg bg-white/10 font-semibold text-white/80 ring-1 ring-white/20 active:scale-95 hover:bg-white/15"
-                                    >
-                                        <Lock className="mr-2 h-4 w-4" />
-                                        Release · {overrideLock}
-                                    </Button>
-                                    <Button
-                                        type="button"
-                                        onClick={() => forceMode(overrideLock)}
+                                        onClick={() => forceMode(mode)}
                                         disabled={isOverriding}
                                         variant="outline"
-                                        className="touch-manipulation rounded-lg border-zinc-600 font-semibold text-zinc-300 active:scale-95 hover:bg-zinc-800"
+                                        className={`touch-manipulation rounded-lg font-semibold active:scale-95 ${cls}`}
                                     >
-                                        <SkipForward className="mr-1.5 h-4 w-4" />
-                                        Next track
+                                        {label}
                                     </Button>
-                                </>
-                            ) : (
-                                <div className="flex flex-wrap gap-1.5">
-                                    {([
-                                        { mode: "calm",    label: "🌊 Calm",  cls: "border-sky-500/30 text-sky-200 hover:bg-sky-950/40" },
-                                        { mode: "focused", label: "🎯 Focus", cls: "border-blue-500/30 text-blue-200 hover:bg-blue-950/40" },
-                                        { mode: "happy",   label: "😊 Happy", cls: "border-yellow-500/30 text-yellow-200 hover:bg-yellow-950/40" },
-                                        { mode: "party",   label: "🔥 Party", cls: "border-fuchsia-500/30 text-fuchsia-200 hover:bg-fuchsia-950/40" },
-                                    ] as const).map(({ mode, label, cls }) => (
-                                        <Button
-                                            key={mode}
-                                            type="button"
-                                            onClick={() => forceMode(mode)}
-                                            disabled={isOverriding}
-                                            variant="outline"
-                                            className={`touch-manipulation rounded-lg font-semibold active:scale-95 ${cls}`}
-                                        >
-                                            {label}
-                                        </Button>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    )}
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </section>
+                )}
 
-                {/* Genre preferences */}
-                <details className="rounded-lg border border-zinc-800/60 bg-zinc-950/50 text-sm text-zinc-500">
+                {/* Genre preferences — collapsed during active session */}
+                {isSessionActive && (
+                <><details className="rounded-lg border border-zinc-800/60 bg-zinc-950/50 text-sm text-zinc-500">
                     <summary className="cursor-pointer px-4 py-2.5 font-medium text-zinc-400 transition hover:text-zinc-300">
                         Your taste {genrePrefs.length > 0 && <span className="ml-1 text-violet-400">· {genrePrefs.length} selected</span>}
                     </summary>
@@ -970,6 +1006,8 @@ export default function LiveSessionPage() {
                         )}
                     </div>
                 </details>
+                </>
+                )}
             </main>
         </div>
     );

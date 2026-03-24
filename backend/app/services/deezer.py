@@ -296,16 +296,20 @@ def search_by_mood(mood: str, recently_played: list[str] | None = None,
 
     played_set = set(recently_played or [])
 
-    # Build keyword sample biased toward user preferences (2 pref slots + 2 random)
+    # Build keyword sample: if user has preferences, fill ALL 4 slots with
+    # preference-biased keywords first, only using random ones to fill gaps.
     pref_keywords: list[str] = []
     if preferences:
         for pref in preferences:
             bias = _PREF_KEYWORD_BIAS.get(pref.lower(), {}).get(mood, [])
             pref_keywords.extend(k for k in bias if k in keywords and k not in pref_keywords)
-    pref_slots  = pref_keywords[:2]
-    other_pool  = [k for k in keywords if k not in pref_slots]
-    random_fill = _random.sample(other_pool, min(2, len(other_pool)))
-    sample      = pref_slots + random_fill
+    # Fill remaining slots with random non-preference keywords
+    other_pool  = [k for k in keywords if k not in pref_keywords]
+    needed      = max(0, 4 - len(pref_keywords))
+    random_fill = _random.sample(other_pool, min(needed, len(other_pool)))
+    sample      = (pref_keywords + random_fill)[:4]
+    if not sample:
+        sample = _random.sample(keywords, min(4, len(keywords)))
 
     seen_ids: set = set()
     merged: list[dict] = []

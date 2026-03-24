@@ -13,6 +13,7 @@ export interface Track {
   preview_url?: string | null;
   cover_url?: string | null;
   deezer_url?: string | null;
+  deezer_id?: string | number | null;
 }
 
 export interface AnalysisEntry {
