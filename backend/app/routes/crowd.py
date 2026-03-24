@@ -64,7 +64,7 @@ def _pick_track_from_charts(vibe_tags: list[str], recently_played: list[str], pr
             t in {"peaceful", "calm", "ambient", "tranquil", "soothing", "meditative", "still", "quiet"}
             for t in [v.lower() for v in vibe_tags]
         ) else "focused"
-        return search_by_mood(mood, recently_played)  # None → caller handles
+        return search_by_mood(mood, recently_played, preferences)  # None → caller handles
 
     # Energetic/party/happy: Deezer charts, pick from full available pool
     genre_id    = pick_genre_for_tags(vibe_tags, preferences) if vibe_tags else 0

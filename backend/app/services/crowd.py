@@ -102,6 +102,30 @@ _COACH_MESSAGES: dict[str, list[str]] = {
         "It's okay to feel overwhelmed. One step at a time.",
         "Progress over perfection. You're doing better than you think.",
     ],
+    "excited": [
+        "That energy is electric — channel it!",
+        "Excitement is fuel. Use it while it lasts.",
+        "Ride this wave — make it count.",
+        "High energy mode activated. Go.",
+    ],
+    "melancholic": [
+        "It's okay to feel this way. Let the music carry you.",
+        "Even slow days move you forward.",
+        "Reflective moments build the deepest focus.",
+        "Sit with the feeling — then let it go.",
+    ],
+    "anxious": [
+        "Breathe. 4 counts in, 4 counts out. You've got this.",
+        "One thing at a time. Just one.",
+        "The music will help. Tune out the noise.",
+        "You are capable of handling this.",
+    ],
+    "bored": [
+        "Boredom is the start of momentum — pick something small and start.",
+        "Even 10 focused minutes changes the day.",
+        "Low motivation is normal. Start anyway.",
+        "Put the music on and just begin.",
+    ],
 }
 
 
@@ -188,20 +212,24 @@ Return ONLY a valid JSON object. Use one of these two schemas:
 
 If 1-4 people (small group or individual):
 {{"scene_type":"study","description":"1-2 sentences: posture and energy as a music listener",\
-"emotion":"focused|happy|tired|stressed","energy":5,"confidence":0.8,\
+"emotion":"focused|happy|tired|stressed|excited|melancholic|anxious|bored","energy":5,"confidence":0.8,\
 "vibe_tags":["focused","lo-fi","steady"],\
 "coach_message":"1-2 sentence motivational or calming message"}}
 
 If 5 or more people (large crowd):
 {{"scene_type":"club","description":"1-2 sentences: group activity and musical atmosphere",\
-"sentiment":"party|calm|focused|happy","energy":5,"confidence":0.8,\
+"sentiment":"party|calm|focused|happy|excited","energy":5,"confidence":0.8,\
 "vibe_tags":["energetic","danceable","euphoric"]}}
 
 Emotion/sentiment guide:
   focused = working steadily, heads down — vibe_tags: focused, steady, lo-fi, deep work, study, minimal
   happy = smiling, animated, social — vibe_tags: joyful, upbeat, feel-good, bright, fun, positive
-  tired = slumped, low energy — vibe_tags: calm, ambient, gentle, quiet, slow, soothing, meditative
-  stressed = tense, fidgeting — vibe_tags: calm, ambient, peaceful, tranquil, soothing, still
+  tired = slumped, low energy, drooping — vibe_tags: calm, ambient, gentle, quiet, slow, soothing, meditative
+  stressed = tense, fidgeting, furrowed brow — vibe_tags: calm, ambient, peaceful, tranquil, soothing, still
+  excited = alert, wide-eyed, high energy, eager — vibe_tags: upbeat, energetic, bright, feel-good, anthemic
+  melancholic = sad, reflective, staring away, low energy but thoughtful — vibe_tags: melancholic, introspective, emotional, atmospheric, gentle
+  anxious = restless, tense but distracted, nervous energy — vibe_tags: peaceful, tranquil, calm, gentle, soothing
+  bored = disengaged, blank stare, slumped but not tired — vibe_tags: upbeat, joyful, bright, fun, playful
   party = dancing, cheering — vibe_tags: energetic, dancing, euphoric, rave, hype, anthemic
   calm = seated, relaxed — vibe_tags: relaxed, mellow, warm, chill, moderate
 
@@ -220,13 +248,16 @@ Return ONLY a valid JSON object:
 "vibe_tags":["focused","lo-fi","study"],\
 "coach_message":"1-2 sentences motivating or calming them"}}
 
-Emotion guide: focused=upright/engaged/steady work, happy=smiling/animated/positive, tired=slumped/head drooping/yawning, stressed=tense/fidgeting/furrowed brow
-vibe_tags: 3-5 descriptors for the music that would suit them right now.
-  focused → focused, steady, lo-fi, deep work, study, minimal, contemplative
-  happy → joyful, upbeat, feel-good, bright, fun, positive, sunny
-  tired → calm, ambient, gentle, quiet, soothing, slow, meditative
-  stressed → peaceful, tranquil, calm, still, soothing, ambient
-Coach guide: focused=affirm the flow, happy=celebrate and sustain, tired=suggest break/stretch, stressed=breathe+one small step
+Emotion guide:
+  focused = upright, engaged, steady work — vibe_tags: focused, steady, lo-fi, deep work, study, minimal
+  happy = smiling, animated, positive energy — vibe_tags: joyful, upbeat, feel-good, bright, fun, sunny
+  tired = slumped, head drooping, yawning — vibe_tags: calm, ambient, gentle, quiet, soothing, meditative
+  stressed = tense, fidgeting, furrowed brow — vibe_tags: peaceful, tranquil, calm, still, soothing
+  excited = bright-eyed, energetic, leaning in — vibe_tags: upbeat, energetic, bright, anthemic, feel-good
+  melancholic = distant gaze, low energy, reflective — vibe_tags: melancholic, introspective, atmospheric, emotional
+  anxious = restless movement, can't settle, nervous — vibe_tags: peaceful, tranquil, calm, gentle, soothing
+  bored = blank stare, low engagement, not tired — vibe_tags: upbeat, joyful, playful, bright, fun
+Coach guide: focused=affirm the flow, happy=celebrate, tired=suggest break, stressed=breathe+one step, excited=channel it, melancholic=validate feeling, anxious=ground them, bored=spark momentum
 
 Return only the JSON. No markdown."""
 

@@ -22,11 +22,19 @@ _OVERRIDE_HISTORY_MAX = 30
 
 # Sentiment → vibe_tags for override requests
 _SENTIMENT_TAGS = {
-    "party":   ["energetic", "dancing", "electronic", "euphoric", "rave"],
-    "calm":    ["peaceful", "ambient", "gentle", "tranquil", "classical"],
-    "focused": ["focused", "lo-fi", "study", "steady", "minimal"],
-    "happy":   ["joyful", "upbeat", "feel-good", "bright", "fun"],
+    "party":      ["energetic", "dancing", "electronic", "euphoric", "rave"],
+    "calm":       ["peaceful", "ambient", "gentle", "tranquil", "classical"],
+    "focused":    ["focused", "lo-fi", "study", "steady", "minimal"],
+    "happy":      ["joyful", "upbeat", "feel-good", "bright", "fun"],
+    "excited":    ["upbeat", "energetic", "anthemic", "feel-good", "bright"],
+    "melancholic":["melancholic", "introspective", "atmospheric", "emotional", "reflective"],
+    "anxious":    ["peaceful", "tranquil", "calm", "gentle", "soothing"],
+    "bored":      ["upbeat", "joyful", "playful", "bright", "fun"],
 }
+
+# New emotions that route through calm/focused keyword search vs charts
+_STUDY_SENTIMENTS = {"focused", "calm", "tired", "stressed", "melancholic", "anxious", "bored"}
+_CHART_SENTIMENTS = {"party", "happy", "excited"}
 
 
 def set_current_track(track: dict, source: str = "auto") -> None:
@@ -59,9 +67,17 @@ def override():
         preferences = data.get("preferences") or []
         vibe_tags   = _SENTIMENT_TAGS.get(sentiment, ["upbeat", "feel-good"])
 
-        # Calm / focused: Deezer keyword search across 4 genre-diverse queries
-        if sentiment in ("calm", "focused"):
-            track = search_by_mood(sentiment, _override_played)
+        # Study-type sentiments: keyword search (calm/focused pools cover all these)
+        if sentiment in _STUDY_SENTIMENTS:
+            # Route new emotions to the most musically appropriate keyword pool
+            search_mood = {
+                "melancholic": "focused",   # introspective / atmospheric
+                "anxious":     "calm",      # soothing / grounding
+                "bored":       "focused",   # gentle upbeat crossover
+                "tired":       "calm",
+                "stressed":    "calm",
+            }.get(sentiment, sentiment)
+            track = search_by_mood(search_mood, _override_played, preferences)
             if not track:
                 return jsonify({"error": "No tracks found — Deezer may be unreachable"}), 503
         else:

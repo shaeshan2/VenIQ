@@ -21,12 +21,16 @@ const QUEUE_PREFILL = 3;
 
 // Emotion → icon + color for Lock In mode
 const EMOTION_CONFIG: Record<string, { emoji: string; color: string; label: string }> = {
-    focused:  { emoji: "🎯", color: "text-blue-300",   label: "Locked In"  },
-    happy:    { emoji: "😊", color: "text-yellow-300",  label: "Happy"      },
-    tired:    { emoji: "😴", color: "text-purple-300",  label: "Tired"      },
-    stressed: { emoji: "😤", color: "text-orange-300",  label: "Stressed"   },
-    party:    { emoji: "🔥", color: "text-pink-300",    label: "Party"      },
-    calm:     { emoji: "🌊", color: "text-indigo-300",  label: "Calm"       },
+    focused:    { emoji: "🎯", color: "text-blue-300",    label: "Locked In"  },
+    happy:      { emoji: "😊", color: "text-yellow-300",  label: "Happy"      },
+    tired:      { emoji: "😴", color: "text-purple-300",  label: "Tired"      },
+    stressed:   { emoji: "😤", color: "text-orange-300",  label: "Stressed"   },
+    party:      { emoji: "🔥", color: "text-pink-300",    label: "Party"      },
+    calm:       { emoji: "🌊", color: "text-indigo-300",  label: "Calm"       },
+    excited:    { emoji: "⚡", color: "text-green-300",   label: "Excited"    },
+    melancholic:{ emoji: "🌧️", color: "text-slate-300",  label: "Reflective" },
+    anxious:    { emoji: "😰", color: "text-amber-300",   label: "Anxious"    },
+    bored:      { emoji: "😑", color: "text-zinc-400",    label: "Bored"      },
 };
 
 const XFADE_S = 1.4; // crossfade duration — short enough to feel decisive
@@ -840,13 +844,16 @@ export default function LiveSessionPage() {
                 <section className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                     <div className="flex flex-wrap gap-2">
                         {!isSessionActive ? (
-                            <Button
-                                onClick={startSession}
-                                className="w-full touch-manipulation rounded-lg bg-violet-600 px-6 font-semibold text-white active:scale-95 hover:bg-violet-500 sm:w-auto"
-                            >
-                                <Play className="mr-2 h-4 w-4 fill-current" />
-                                Go live
-                            </Button>
+                            <div className="relative w-full sm:w-auto">
+                                <span className="absolute -inset-1 rounded-xl bg-violet-500/40 animate-ping" />
+                                <Button
+                                    onClick={startSession}
+                                    className="relative w-full touch-manipulation rounded-xl bg-violet-600 px-8 py-3 text-base font-bold text-white shadow-lg shadow-violet-900/50 active:scale-95 hover:bg-violet-500 hover:shadow-violet-700/60 transition-all sm:w-auto"
+                                >
+                                    <Play className="mr-2 h-5 w-5 fill-current" />
+                                    Go live
+                                </Button>
+                            </div>
                         ) : (
                             <Button
                                 onClick={stopSession}

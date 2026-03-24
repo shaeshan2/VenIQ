@@ -11,8 +11,10 @@ No API key required — Deezer's public REST endpoints are free for demo use.
 import time
 import requests
 
-_SEARCH_URL = "https://api.deezer.com/search"
-_CHART_URL  = "https://api.deezer.com/chart/{genre_id}/tracks"
+_SEARCH_URL    = "https://api.deezer.com/search"
+_CHART_URL     = "https://api.deezer.com/chart/{genre_id}/tracks"
+_PLAYLIST_SEARCH_URL = "https://api.deezer.com/search/playlist"
+_PLAYLIST_TRACKS_URL = "https://api.deezer.com/playlist/{id}/tracks"
 
 # Deezer genre IDs used for chart-based selection
 GENRE_ALL         = 0
@@ -149,7 +151,7 @@ def pick_genre_for_tags(vibe_tags: list[str], preferences: list[str] | None = No
         for pref in preferences:
             genre_id = _PREF_GENRE_MAP.get(pref.lower().strip())
             if genre_id is not None:
-                votes[genre_id] += 3
+                votes[genre_id] += 8  # strong preference boost — overrides mood signal if set
     return votes.most_common(1)[0][0] if votes else GENRE_ALL
 
 
@@ -211,14 +213,81 @@ def search_deezer_by_keyword(keyword: str, limit: int = 100) -> list[dict]:
         return []
 
 
-def search_by_mood(mood: str, recently_played: list[str] | None = None) -> dict | None:
-    """
-    Build a large, genre-diverse candidate pool by sampling 4 random keywords
-    for the mood, merging and deduplicating all results, then picking a random
-    track that hasn't been played recently.
+_playlist_cache: dict[str, tuple[float, list[dict]]] = {}
 
-    Using 4 keywords × ~100 results each gives ~200-350 unique tracks after
-    dedup, drastically reducing repeats compared to a single-keyword approach.
+# Mood → curated playlist search queries (returns editorially curated tracklists)
+_MOOD_PLAYLISTS: dict[str, list[str]] = {
+    "focused": ["lofi study playlist", "deep focus work music", "concentration music playlist", "study beats playlist"],
+    "calm":    ["calm relaxing playlist", "peaceful ambient playlist", "chill relax playlist", "meditation music playlist"],
+}
+
+
+def fetch_playlist_tracks(query: str, limit: int = 80) -> list[dict]:
+    """
+    Search Deezer for playlists matching query, then fetch tracks from a randomly
+    chosen top playlist. Returns tracks with preview URLs. Cached 1 hour.
+    """
+    import random as _random
+    now = time.time()
+    cached = _playlist_cache.get(query)
+    if cached and (now - cached[0] < _CACHE_TTL):
+        return cached[1]
+
+    try:
+        resp = requests.get(_PLAYLIST_SEARCH_URL, params={"q": query, "limit": 10}, timeout=8)
+        resp.raise_for_status()
+        playlists = [p for p in resp.json().get("data", []) if p.get("nb_tracks", 0) > 10]
+        if not playlists:
+            return []
+        playlist = _random.choice(playlists[:5])
+        tr = requests.get(
+            _PLAYLIST_TRACKS_URL.format(id=playlist["id"]),
+            params={"limit": limit},
+            timeout=8,
+        )
+        tr.raise_for_status()
+        tracks = [t for t in tr.json().get("data", []) if t.get("preview")]
+        _random.shuffle(tracks)
+        _playlist_cache[query] = (now, tracks)
+        return tracks
+    except Exception:
+        return []
+
+
+# Genre preference → preferred keyword subsets within each mood pool
+_PREF_KEYWORD_BIAS: dict[str, dict[str, list[str]]] = {
+    "electronic": {
+        "focused": ["ambient electronic", "deep focus beats"],
+        "calm":    ["chillout downtempo"],
+    },
+    "hip-hop": {
+        "focused": ["lofi hip hop", "deep focus beats"],
+        "calm":    ["chillout downtempo"],
+    },
+    "classical": {
+        "focused": ["neoclassical piano", "piano study classical"],
+        "calm":    ["classical piano peaceful", "piano ballad emotional"],
+    },
+    "r-n-b": {
+        "focused": ["chillwave downtempo"],
+        "calm":    ["singer songwriter soft"],
+    },
+    "rock": {
+        "focused": ["post rock instrumental"],
+        "calm":    ["acoustic guitar relaxing"],
+    },
+}
+
+
+def search_by_mood(mood: str, recently_played: list[str] | None = None,
+                   preferences: list[str] | None = None) -> dict | None:
+    """
+    Build a large, genre-diverse candidate pool by sampling 4 keywords for the mood
+    (biased toward user's genre preferences), merging + deduplicating all results,
+    then picking randomly from what hasn't been played recently.
+
+    Mixes in tracks from a curated Deezer playlist for additional editorial quality.
+    4 keywords × ~100 results + 1 playlist × ~80 results ≈ 300-450 unique tracks.
     """
     import random as _random
     keywords = _MOOD_KEYWORDS.get(mood, [])
@@ -227,11 +296,29 @@ def search_by_mood(mood: str, recently_played: list[str] | None = None) -> dict 
 
     played_set = set(recently_played or [])
 
-    # Sample 4 distinct keywords (covers multiple genres)
-    sample = _random.sample(keywords, min(4, len(keywords)))
+    # Build keyword sample biased toward user preferences (2 pref slots + 2 random)
+    pref_keywords: list[str] = []
+    if preferences:
+        for pref in preferences:
+            bias = _PREF_KEYWORD_BIAS.get(pref.lower(), {}).get(mood, [])
+            pref_keywords.extend(k for k in bias if k in keywords and k not in pref_keywords)
+    pref_slots  = pref_keywords[:2]
+    other_pool  = [k for k in keywords if k not in pref_slots]
+    random_fill = _random.sample(other_pool, min(2, len(other_pool)))
+    sample      = pref_slots + random_fill
 
     seen_ids: set = set()
     merged: list[dict] = []
+
+    # Mix in tracks from a curated Deezer playlist (~33% of the pool)
+    playlist_queries = _MOOD_PLAYLISTS.get(mood, [])
+    if playlist_queries:
+        pq = _random.choice(playlist_queries)
+        for t in fetch_playlist_tracks(pq):
+            if t["id"] not in seen_ids:
+                seen_ids.add(t["id"])
+                merged.append(t)
+
     for kw in sample:
         for t in search_deezer_by_keyword(kw):
             if t["id"] not in seen_ids:
